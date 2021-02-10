@@ -74,12 +74,9 @@ std::ostringstream &Global::thisThreadLogStream() const noexcept {
 }
 
 Global &Global::get() noexcept {
-    if (instancePtr_ == nullptr) {
-        while (instancePtr_ == nullptr) {
-            std::this_thread::sleep_for(std::chrono::microseconds (10));
-        }
+    while (instancePtr_ == nullptr) {
+        std::this_thread::sleep_for(std::chrono::microseconds (10));
     }
-
     return *instancePtr_;
 }
 
