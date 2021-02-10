@@ -1,0 +1,6 @@
+.idea
+cmake-build*/
+third_party/tensorflow
+*.so
+*.dll.a
+*.dll
