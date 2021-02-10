@@ -6,11 +6,11 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORALLREDUCEREQUEST_H
 
 #include "communicate/communication/CommunicationBackend.h"
-#include "communicate/tensor/TensorCommunicateRequest.h"
+#include "communicate/tensor/TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class TensorAllreduceRequest : public TensorCommunicateRequest {
+class TensorAllreduceRequest : public TensorCollectiveCommunicateRequest {
 public:
     using Operation = CommunicationBackend::AllreduceOperation;
 

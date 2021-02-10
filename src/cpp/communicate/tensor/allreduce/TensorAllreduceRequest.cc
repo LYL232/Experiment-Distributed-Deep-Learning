@@ -12,14 +12,14 @@ TensorAllreduceRequest::TensorAllreduceRequest(
         std::shared_ptr<tensorflow::Tensor> resultTensor,
         std::function<void(StatusCode)> done,
         Operation op) :
-        TensorCommunicateRequest(key, requestingTensor, resultTensor, done),
+        TensorCollectiveCommunicateRequest(key, requestingTensor, resultTensor, done),
         op_(op) {}
 
 TensorAllreduceRequest::TensorAllreduceRequest(const TensorAllreduceRequest &other) :
-        TensorCommunicateRequest(other), op_(other.op_) {}
+        TensorCollectiveCommunicateRequest(other), op_(other.op_) {}
 
 TensorAllreduceRequest::TensorAllreduceRequest(TensorAllreduceRequest &&other) :
-        TensorCommunicateRequest(std::move(other)), op_(other.op_) {
+        TensorCollectiveCommunicateRequest(std::move(other)), op_(other.op_) {
 }
 
 TensorAllreduceRequest::Operation TensorAllreduceRequest::op() const noexcept {

@@ -12,7 +12,7 @@ list(APPEND SOURCES
         "${PROJECT_SOURCE_DIR}/src/cpp/op/AllreduceOp.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/communication/CommunicationBackend.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/communication/mpi/MPIBackend.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/TensorCommunicateRequest.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/TensorCollectiveCommunicateRequest.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/TensorAllreduceRequest.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/RingTokenAllreduceController.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/MPIRingTokenAllreduceController.cc"

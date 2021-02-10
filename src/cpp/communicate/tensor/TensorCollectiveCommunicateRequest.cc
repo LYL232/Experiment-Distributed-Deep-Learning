@@ -2,11 +2,11 @@
 // Created by LYL232 on 2021/2/10.
 //
 
-#include "TensorCommunicateRequest.h"
+#include "TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-TensorCommunicateRequest::TensorCommunicateRequest(
+TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(
         const std::string &key,
         std::shared_ptr<tensorflow::Tensor> requestingTensor,
         std::shared_ptr<tensorflow::Tensor> resultTensor,
@@ -17,36 +17,36 @@ TensorCommunicateRequest::TensorCommunicateRequest(
     checkDtypeAndNumElements_(requestingTensor, resultTensor);
 }
 
-TensorCommunicateRequest::TensorCommunicateRequest(const TensorCommunicateRequest &other) noexcept
+TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(const TensorCollectiveCommunicateRequest &other) noexcept
         : key_(other.key_),
           requestingTensor_(other.requestingTensor_), resultTensor_(other.resultTensor_),
           done_(other.done_) {}
 
-TensorCommunicateRequest::TensorCommunicateRequest(TensorCommunicateRequest &&other) noexcept
+TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(TensorCollectiveCommunicateRequest &&other) noexcept
         : key_(std::move(other.key_)),
           requestingTensor_(std::move(other.requestingTensor_)),
           resultTensor_(std::move(other.resultTensor_)),
           done_(std::move(other.done_)) {}
 
-std::shared_ptr<tensorflow::Tensor> &TensorCommunicateRequest::requestingTensor()
+std::shared_ptr<tensorflow::Tensor> &TensorCollectiveCommunicateRequest::requestingTensor()
 const noexcept {
     return requestingTensor_;
 }
 
-std::shared_ptr<tensorflow::Tensor> &TensorCommunicateRequest::resultTensor()
+std::shared_ptr<tensorflow::Tensor> &TensorCollectiveCommunicateRequest::resultTensor()
 const noexcept {
     return resultTensor_;
 }
 
-void TensorCommunicateRequest::done(StatusCode code) const noexcept {
+void TensorCollectiveCommunicateRequest::done(StatusCode code) const noexcept {
     done_(code);
 }
 
-const std::string &TensorCommunicateRequest::key() const noexcept {
+const std::string &TensorCollectiveCommunicateRequest::key() const noexcept {
     return key_;
 }
 
-void TensorCommunicateRequest::checkDtypeAndNumElements_(
+void TensorCollectiveCommunicateRequest::checkDtypeAndNumElements_(
         const std::shared_ptr<tensorflow::Tensor> &requestingTensor,
         const std::shared_ptr<tensorflow::Tensor> &resultTensor) {
     using namespace std;
@@ -64,23 +64,23 @@ void TensorCommunicateRequest::checkDtypeAndNumElements_(
     }
 }
 
-size_t TensorCommunicateRequest::tensorSize() const noexcept {
+size_t TensorCollectiveCommunicateRequest::tensorSize() const noexcept {
     return requestingTensor_->tensor_data().size();
 }
 
-size_t TensorCommunicateRequest::elements() const noexcept {
+size_t TensorCollectiveCommunicateRequest::elements() const noexcept {
     return requestingTensor_->NumElements();
 }
 
-tensorflow::DataType TensorCommunicateRequest::dtype() const noexcept {
+tensorflow::DataType TensorCollectiveCommunicateRequest::dtype() const noexcept {
     return requestingTensor_->dtype();
 }
 
-void *TensorCommunicateRequest::requestingTensorData() const noexcept {
+void *TensorCollectiveCommunicateRequest::requestingTensorData() const noexcept {
     return (void *) requestingTensor_->tensor_data().data();
 }
 
-void *TensorCommunicateRequest::resultTensorData() const noexcept {
+void *TensorCollectiveCommunicateRequest::resultTensorData() const noexcept {
     return (void *) resultTensor_->tensor_data().data();
 }
 

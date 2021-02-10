@@ -2,8 +2,8 @@
 // Created by LYL232 on 2021/2/10.
 //
 
-#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOMMUNICATEREQUEST_H
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOMMUNICATEREQUEST_H
+#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOLLECTIVECOMMUNICATEREQUEST_H
+#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOLLECTIVECOMMUNICATEREQUEST_H
 
 #include <memory>
 #include "tensorflow/core/framework/tensor.h"
@@ -11,7 +11,11 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class TensorCommunicateRequest {
+/**
+ * OP要求对Tensor进行组通信时的请求类, 提供一系列访问请求Tensor和结果Tensor的方法, 还有维护计算完毕时
+ * 回调的异步方法
+ */
+class TensorCollectiveCommunicateRequest {
 public:
     /**
      * 检查两个Tensor的size和dtype是否一致再返回
@@ -21,16 +25,16 @@ public:
      * @param resultTensor 该请求返回结果的Tensor
      * @param done 完成时回调函数, 通过此函数通知此请求已经完成
      */
-    TensorCommunicateRequest(
+    TensorCollectiveCommunicateRequest(
             const std::string &key,
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
             std::shared_ptr<tensorflow::Tensor> resultTensor,
             std::function<void(StatusCode)> done
     );
 
-    TensorCommunicateRequest(const TensorCommunicateRequest &) noexcept;
+    TensorCollectiveCommunicateRequest(const TensorCollectiveCommunicateRequest &) noexcept;
 
-    TensorCommunicateRequest(TensorCommunicateRequest &&) noexcept;
+    TensorCollectiveCommunicateRequest(TensorCollectiveCommunicateRequest &&) noexcept;
 
     const std::string &key() const noexcept;
 
@@ -50,7 +54,7 @@ public:
 
     void *resultTensorData() const noexcept;
 
-    virtual ~TensorCommunicateRequest() {};
+    virtual ~TensorCollectiveCommunicateRequest() {};
 
 private:
     std::string key_;
@@ -66,4 +70,4 @@ private:
 }}}
 
 
-#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOMMUNICATEREQUEST_H
+#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOLLECTIVECOMMUNICATEREQUEST_H
