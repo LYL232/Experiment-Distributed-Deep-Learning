@@ -4,3 +4,4 @@ third_party/tensorflow
 *.so
 *.dll.a
 *.dll
+!release/lib.so
