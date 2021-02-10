@@ -2,7 +2,7 @@
 // Created by LYL232 on 2021/2/6.
 //
 
-#include "Global.h"
+#include "global/Global.h"
 #include "AllreduceOp.h"
 #include "communicate/tensor/allreduce/rta/RingTokenAllreduceController.h"
 #include "tensorflow/core/framework/shape_inference.h"
@@ -42,14 +42,16 @@ void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
 
     OP_REQUIRES_OK_ASYNC(context, statusCode2TFStatus(
             lyl232::experiment::ddl::Global::get()
-                    .controller().handleTenorAllreduceRequest(
+                    .allreduceController().handleTenorAllreduceRequest(
                     inputName,
                     std::make_shared<Tensor>(input),
                     std::make_shared<Tensor>(*output),
                     [context, done, inputName](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
                         done();
-                    }
+                    },
+                    lyl232::experiment::ddl::tensorsallreduce::
+                    TensorsAllreduceController::Operation::ALLREDUCE_OP_SUM
             )), done);
 }
 

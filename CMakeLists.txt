@@ -6,11 +6,17 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CXX_STANDARD 11)
 
 list(APPEND SOURCES
-        "${PROJECT_SOURCE_DIR}/src/cpp/Global.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/global/Global.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/global/MPIGlobal.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/c_api.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/op/AllreduceOp.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/communication/MPICommunication.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/communication/CommunicationBackend.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/communication/mpi/MPIBackend.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/TensorCommunicateRequest.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/TensorAllreduceRequest.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/RingTokenAllreduceController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/MPIRingTokenAllreduceController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/Token.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/TensorsAllreduceController.cc"
         )
 

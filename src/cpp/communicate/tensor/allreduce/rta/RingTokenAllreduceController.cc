@@ -4,105 +4,63 @@
 
 #include <assert.h>
 #include <algorithm>
-#include "communicate/communication/MPICommunication.h"
 #include "communicate/tensor/allreduce/rta/RingTokenAllreduceController.h"
 
-namespace lyl232 { namespace experiment { namespace ddl { namespace tensorsallreduce { namespace rta {
+namespace lyl232 { namespace experiment { namespace ddl { namespace tensorsallreduce {
+namespace rta {
 
-const std::string &Token::desc() const {
-    using namespace std;
-    if (desc_.length() == 0) {
-        desc_.append("{type: ");
-        switch (type_) {
-            case TOKEN_TYPE_READY:
-                desc_.append("TOKEN_TYPE_READY");
-                break;
-            case TOKEN_TYPE_SYNC:
-                desc_.append("TOKEN_TYPE_SYNC");
-                break;
-            case TOKEN_TYPE_ALLREDUCE:
-                desc_.append("TOKEN_TYPE_ALLREDUCE");
-                break;
-            case TOKEN_TYPE_SHUT_DOWN:
-                desc_.append("TOKEN_TYPE_SHUT_DOWN");
-                break;
-        }
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_TOKEN_DESC_SHOW_MSG
-        desc_.append(", msg: ").append(msg_);
-#endif
-        desc_.append("}");
-    }
-    return desc_;
-}
-
-double RingTokenAllreduceController::inflateFactor_ = 1.5;
 std::string RingTokenAllreduceController::tokenNameSplitDelimiter_("\n");
 
+RingTokenAllreduceController::RingTokenAllreduceController(
+        std::ostream &initializingLogStream,
+        std::shared_ptr<CommunicationBackend> communication
+) :
+        outMutex_(PTHREAD_MUTEX_INITIALIZER),
+        registerLock_(PTHREAD_RWLOCK_INITIALIZER),
+        stageLock_(PTHREAD_RWLOCK_INITIALIZER),
+        outputTokenCond_(PTHREAD_COND_INITIALIZER),
+        currentStage_(RTAC_INIT),
+        sendThread_(&RingTokenAllreduceController::sendMain_, this, communication),
+        recvThread_(&RingTokenAllreduceController::recvMain_, this, communication),
+        outputtingTokenQueue_(),
+        waitingReadyTokenName_(),
+        registeredRequest_() {
+    std::string controllerLogStr("RingTokenAllreduceController:");
+    controllerLogStr.append(std::to_string((size_t) this)).append(" ");
+    initializingLogStream << STREAM_WITH_RANK(
+            "new " << controllerLogStr << ", waiting for initialization" << std::endl,
+            communication->processRank());
+    while (!initialized()) {
+        initializingLogStream << STREAM_WITH_RANK(
+                controllerLogStr << "initialization check failed" << std::endl,
+                communication->processRank());
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+    }
+    initializingLogStream << STREAM_WITH_RANK(
+            controllerLogStr << "initialized" << std::endl, communication->processRank()
+    );
+
+}
+
 RingTokenAllreduceController::~RingTokenAllreduceController() {
-    using namespace std;
-
-    GLOBAL_INFO_WITH_RANK("controller destructing");
-
-    fillTokenSendBufferAndNotify(make_shared<Token>(Token::shutDownToken()));
-
-    sendThread_.join();
-    recvThread_.join();
-
-    delete[]sendBuffer_;
-    delete[]recvBuffer_;
-    delete[]allreduceSendBuffer_;
-    delete[]allreduceRecvBuffer_;
     pthread_mutex_destroy(&outMutex_);
     pthread_rwlock_destroy(&stageLock_);
-    pthread_rwlock_destroy(&registerTensorLock_);
+    pthread_rwlock_destroy(&registerLock_);
     pthread_cond_destroy(&outputTokenCond_);
 }
 
-void RingTokenAllreduceController::checkSendBuffer_(size_t bytesRequire) {
-    if (sendBufferSize_ < bytesRequire) {
-        delete[]sendBuffer_;
-        sendBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        sendBuffer_ = new char[sendBufferSize_];
-    }
-}
-
-void RingTokenAllreduceController::checkRecvBuffer_(size_t bytesRequire) {
-    if (recvBufferSize_ < bytesRequire) {
-        delete[]recvBuffer_;
-        recvBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        recvBuffer_ = new char[recvBufferSize_];
-    }
-}
-
-void RingTokenAllreduceController::checkAllreduceBuffer_(size_t bytesRequire) {
-    if (allreduceBufferSize_ < bytesRequire) {
-        delete[]allreduceSendBuffer_;
-        delete[]allreduceRecvBuffer_;
-        allreduceBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        allreduceSendBuffer_ = new char[allreduceBufferSize_];
-        allreduceRecvBuffer_ = new char[allreduceBufferSize_];
-    }
-}
-
-void RingTokenAllreduceController::sendMain_() {
+void RingTokenAllreduceController::sendMain_(
+        std::shared_ptr<CommunicationBackend> communication
+) {
     using namespace std;
-    auto &global = Global::get();
-    size_t stringSize;
-    int worldRank = global.MPIWorldRank(),
-            worldSize = global.MPIWorldSize(),
-            receiverRank = (worldRank + 1) % worldSize,
-            offset;
+    int rank = communication->processRank(),
+            processes = communication->processes(),
+            receiverRank = (rank + 1) % processes;
 
-    Token::Type tType;
-
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_THREAD_MANNER
-    GLOBAL_INFO_WITH_RANK_THREAD_ID("send thread started");
-#endif
-
-    while (global.MPIWorldSize() > 1) {
+    while (communication->processes() > 1 && !inStage_(RTAC_SHUT_DOWN)) {
         pthread_mutex_lock(&outMutex_);
         if (inStage_(RTAC_INIT)) {
-            if (worldRank == 0) {
+            if (rank == 0) {
                 fromStageToStage_(RTAC_INIT, RTAC_WAITING_TENSORS);
             } else {
                 fromStageToStage_(RTAC_INIT, RTAC_WAITING_READY_TOKEN);
@@ -126,29 +84,8 @@ void RingTokenAllreduceController::sendMain_() {
         while (!sendingTokens.empty()) {
             auto token = sendingTokens.front();
             sendingTokens.pop();
-            stringSize = token->msg().length();
-            tType = token->type();
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_MPI_CALLS
-            GLOBAL_INFO_WITH_RANK_THREAD_ID("before mpi sending Token");
-#endif
-            checkSendBuffer_(max(tokenMetaSize_, stringSize));
-            // 发送Token:
-            // 1. 先打包发送描述信息: token.SourceRank, token.msg_.length()
-            // 2. 再发送token.msg_.length()的字符串
-            offset = 0;
-            MPI_Pack(&tType, sizeof(Token::Type), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset, MPI_COMM_WORLD);
-            MPI_Pack(&stringSize, sizeof(size_t), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset, MPI_COMM_WORLD);
-            MPI_Send(
-                    sendBuffer_, offset, MPI_PACKED, receiverRank,
-                    MPICommunication::MPI_TAG_RTA_COMMUNICATE_META, MPI_COMM_WORLD
-            );
-            MPI_Send(
-                    token->msg().c_str(), (int) stringSize, MPI_CHAR, receiverRank,
-                    MPICommunication::MPI_TAG_RTA_COMMUNICATE_MSG, MPI_COMM_WORLD
-            );
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_MPI_CALLS
-            GLOBAL_INFO_WITH_RANK_THREAD_ID("mpi sent Token");
-#endif
+
+            this->communicationSendTokenTo(receiverRank, token);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
             GLOBAL_INFO_WITH_RANK_THREAD_ID("sent Token " << token->desc());
 #endif
@@ -165,17 +102,19 @@ void RingTokenAllreduceController::sendMain_() {
 #endif
 }
 
-void RingTokenAllreduceController::recvMain_() {
+void RingTokenAllreduceController::recvMain_(std::shared_ptr<CommunicationBackend> communication) {
     using namespace std;
-    int worldRank = Global::get().MPIWorldRank();
+    int rank = communication->processRank(),
+            processes = communication->processes(),
+            senderRank = (rank - 1 + processes) % processes;
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_THREAD_MANNER
     GLOBAL_INFO_WITH_RANK_THREAD_ID("receive thread started");
 #endif
 
-    while (Global::get().MPIWorldSize() > 1 && !inStage_(RTAC_SHUT_DOWN)) {
+    while (Global::get().processes() > 1 && !inStage_(RTAC_SHUT_DOWN)) {
 
-        auto token = receiveTokenFromSender();
+        auto token = this->communicationReceiveTokenFrom(senderRank);
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
         GLOBAL_INFO_WITH_RANK_THREAD_ID("received Token " << token->desc());
@@ -185,7 +124,7 @@ void RingTokenAllreduceController::recvMain_() {
             forceToStage_(RTAC_SHUT_DOWN);
             break;
         }
-        if (worldRank == 0) {
+        if (rank == 0) {
             handleReceivingTokenAsTokenGenerator(token);
         } else {
             handleReceivingTokenAsTokenReceiver(token);
@@ -194,43 +133,6 @@ void RingTokenAllreduceController::recvMain_() {
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_THREAD_MANNER
     GLOBAL_INFO_WITH_RANK_THREAD_ID("receive thread exit");
 #endif
-}
-
-std::shared_ptr<Token> RingTokenAllreduceController::receiveTokenFromSender() {
-    auto &global = Global::get();
-    int worldRank = global.MPIWorldRank(),
-            worldSize = global.MPIWorldSize(),
-            senderRank = (worldRank - 1 + worldSize) % worldSize,
-            offset;
-    size_t stringSize;
-    Token::Type tType;
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_MPI_CALLS
-    GLOBAL_INFO_WITH_RANK_THREAD_ID("receive thread waiting rank " << senderRank << " for Token");
-#endif
-
-    checkRecvBuffer_(tokenMetaSize_);
-    MPI_Recv(
-            recvBuffer_, tokenMetaSize_, MPI_PACKED, senderRank,
-            MPICommunication::MPI_TAG_RTA_COMMUNICATE_META,
-            MPI_COMM_WORLD, &statusBuffer_
-    );
-
-    // todo: 检查status_, 出错则做相应处理
-    offset = 0;
-    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &tType, sizeof(Token::Type), MPI_BYTE, MPI_COMM_WORLD);
-    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &stringSize, sizeof(size_t), MPI_BYTE, MPI_COMM_WORLD);
-
-    checkRecvBuffer_(stringSize + 1);
-
-    MPI_Recv(
-            recvBuffer_, stringSize, MPI_PACKED, senderRank,
-            MPICommunication::MPI_TAG_RTA_COMMUNICATE_MSG,
-            MPI_COMM_WORLD, &statusBuffer_
-    );
-    // todo: 检查status_, 出错则做相应处理
-
-    recvBuffer_[stringSize] = 0;
-    return std::make_shared<Token>(tType, recvBuffer_);
 }
 
 
@@ -242,11 +144,11 @@ void RingTokenAllreduceController::handleReceivingTokenAsTokenGenerator(std::sha
             assert(inStage_(RTAC_WAITING_READY_TOKEN));
 
             string allReadyNames;
-            pthread_rwlock_rdlock(&registerTensorLock_);
-            for (auto iter = registeredTensors_.begin(); iter != registeredTensors_.end(); ++iter) {
+            pthread_rwlock_rdlock(&registerLock_);
+            for (auto iter = registeredRequest_.begin(); iter != registeredRequest_.end(); ++iter) {
                 allReadyNames.append(iter->first).append(tokenNameSplitDelimiter_);
             }
-            pthread_rwlock_unlock(&registerTensorLock_);
+            pthread_rwlock_unlock(&registerLock_);
 
             fromStageToStage_(RTAC_WAITING_READY_TOKEN, RTAC_WAITING_SYNC_TOKEN);
 
@@ -277,13 +179,13 @@ void RingTokenAllreduceController::handleReceivingTokenAsTokenGenerator(std::sha
 
             fromStageToStage_(RTAC_WAITING_ALLREDUCE_TOKEN, RTAC_ALLREDUCING);
             allreduceByNames(getNamesFromToken(*token));
-            pthread_rwlock_rdlock(&registerTensorLock_);
-            if (!registeredTensors_.empty()) {
+            pthread_rwlock_rdlock(&registerLock_);
+            if (!registeredRequest_.empty()) {
                 token = make_shared<Token>(
                         Token::TOKEN_TYPE_READY,
-                        registeredTensors_.begin()->first);
+                        registeredRequest_.begin()->first);
                 fromStageToStage_(RTAC_ALLREDUCING, RTAC_WAITING_READY_TOKEN);
-                pthread_rwlock_unlock(&registerTensorLock_);
+                pthread_rwlock_unlock(&registerLock_);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
                 GLOBAL_INFO_WITH_RANK_THREAD_ID(
                         "forward token: " << token->desc()
@@ -292,7 +194,7 @@ void RingTokenAllreduceController::handleReceivingTokenAsTokenGenerator(std::sha
                 fillTokenSendBufferAndNotify(token);
             } else {
                 fromStageToStage_(RTAC_ALLREDUCING, RTAC_WAITING_TENSORS);
-                pthread_rwlock_unlock(&registerTensorLock_);
+                pthread_rwlock_unlock(&registerLock_);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
                 GLOBAL_INFO_WITH_RANK_THREAD_ID(
                         "wait for registering: to stage RTAC_WAITING_TENSORS");
@@ -316,8 +218,8 @@ void RingTokenAllreduceController::handleReceivingTokenAsTokenReceiver(std::shar
         case Token::TOKEN_TYPE_READY: {
             assert(inStage_(RTAC_WAITING_READY_TOKEN));
 
-            pthread_rwlock_rdlock(&registerTensorLock_);
-            if (registeredTensors_.find(token->msg()) != registeredTensors_.end()) {
+            pthread_rwlock_rdlock(&registerLock_);
+            if (registeredRequest_.find(token->msg()) != registeredRequest_.end()) {
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
                 GLOBAL_INFO_WITH_RANK_THREAD_ID(
                         "forward token: " << token->desc()
@@ -334,7 +236,7 @@ void RingTokenAllreduceController::handleReceivingTokenAsTokenReceiver(std::shar
 #endif
                 fromStageToStage_(RTAC_WAITING_READY_TOKEN, RTAC_WAITING_TENSORS);
             }
-            pthread_rwlock_unlock(&registerTensorLock_);
+            pthread_rwlock_unlock(&registerLock_);
             break;
         }
         case Token::TOKEN_TYPE_SYNC: {
@@ -343,13 +245,13 @@ void RingTokenAllreduceController::handleReceivingTokenAsTokenReceiver(std::shar
             auto names = getNamesFromToken(*token);
             set<string> notReady;
 
-            pthread_rwlock_rdlock(&registerTensorLock_);
+            pthread_rwlock_rdlock(&registerLock_);
             for (auto iter = names.begin(); iter != names.end(); ++iter) {
-                if (registeredTensors_.find(*iter) == registeredTensors_.end()) {
+                if (registeredRequest_.find(*iter) == registeredRequest_.end()) {
                     notReady.emplace(*iter);
                 }
             }
-            pthread_rwlock_unlock(&registerTensorLock_);
+            pthread_rwlock_unlock(&registerLock_);
 
             if (!notReady.empty()) {
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
@@ -409,53 +311,54 @@ void RingTokenAllreduceController::fillTokenSendBufferAndNotify(std::shared_ptr<
 }
 
 StatusCode RingTokenAllreduceController::handleTenorAllreduceRequest(
-        const std::string &name,
+        const std::string &key,
         std::shared_ptr<tensorflow::Tensor> sendTensor,
         std::shared_ptr<tensorflow::Tensor> recvTensor,
-        std::function<void(StatusCode)> done) {
+        std::function<void(StatusCode)> done,
+        Operation op) {
     using namespace std;
     auto &global = Global::get();
     assert(!inStage_(RTAC_INIT));
-    pthread_rwlock_wrlock(&registerTensorLock_);
-    assert(registeredTensors_.find(name) == registeredTensors_.end());
-    auto *entry = new TensorEntry(name, sendTensor, recvTensor, done);
-    registeredTensors_.emplace(name, entry);
+    pthread_rwlock_wrlock(&registerLock_);
+    assert(registeredRequest_.find(key) == registeredRequest_.end());
+    auto *request = new TensorAllreduceRequest(key, sendTensor, recvTensor, done, op);
+    registeredRequest_.emplace(key, request);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TF_OP_INTERACTION
-    GLOBAL_INFO_WITH_RANK_THREAD_ID("op request to allreuce tensor: " << name);
+    GLOBAL_INFO_WITH_RANK_THREAD_ID("op request to allreuce tensor: " << key);
 #endif
-    if (global.MPIWorldRank() == 0) {
+    if (global.processRank() == 0) {
         if (inStage_(RTAC_WAITING_TENSORS)) {
             fromStageToStage_(RTAC_WAITING_TENSORS, RTAC_WAITING_READY_TOKEN);
-            fillTokenSendBufferAndNotify(make_shared<Token>(Token::TOKEN_TYPE_READY, name));
+            fillTokenSendBufferAndNotify(make_shared<Token>(Token::TOKEN_TYPE_READY, key));
         }
     } else {
-        if (name == waitingReadyTokenName_) {
+        if (key == waitingReadyTokenName_) {
             fromStageToStage_(RTAC_WAITING_TENSORS, RTAC_WAITING_SYNC_TOKEN);
-            fillTokenSendBufferAndNotify(make_shared<Token>(Token::TOKEN_TYPE_READY, name));
+            fillTokenSendBufferAndNotify(make_shared<Token>(Token::TOKEN_TYPE_READY, key));
             waitingReadyTokenName_ = "";
         }
     }
-    pthread_rwlock_unlock(&registerTensorLock_);
+    pthread_rwlock_unlock(&registerLock_);
     return STATUS_OK;
 }
 
-void RingTokenAllreduceController::allreduceByNames(const std::set<std::string> &names) {
+StatusCode RingTokenAllreduceController::allreduceByNames(const std::set<std::string> &names) {
     using namespace std;
 
-    size_t allreduceSize = 0, elements = 0, offset;
+    size_t allreduceSize = 0, elements = 0;
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_ALLREDUCE
     string allreducingTensorsDesc = "(\n";
 #endif
-    pthread_rwlock_wrlock(&registerTensorLock_);
-    map<string, TensorEntry *> entries;
+    pthread_rwlock_wrlock(&registerLock_);
+    map<string, TensorAllreduceRequest *> requests;
     for (auto i = names.begin(); i != names.end(); ++i) {
-        const auto &name = *i;
-        auto iter = registeredTensors_.find(name);
+        const auto &key = *i;
+        auto iter = registeredRequest_.find(key);
 
-        if (iter == registeredTensors_.end()) {
+        if (iter == registeredRequest_.end()) {
             string r = "registered Tensors: {\n";
-            for (auto _iter = registeredTensors_.begin(); _iter != registeredTensors_.end(); ++_iter) {
+            for (auto _iter = registeredRequest_.begin(); _iter != registeredRequest_.end(); ++_iter) {
                 r.append("\t").append(_iter->first).append("\n");
             }
             string n = "{\n";
@@ -466,17 +369,17 @@ void RingTokenAllreduceController::allreduceByNames(const std::set<std::string> 
             r.append("}, but does not contain all needing Tensor: ").append(n);
             GLOBAL_ERROR_WITH_RANK(r);
         }
-        assert(iter != registeredTensors_.end());
-        TensorEntry *entry = iter->second;
+        assert(iter != registeredRequest_.end());
+        TensorAllreduceRequest *request = iter->second;
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_ALLREDUCE
-        allreducingTensorsDesc.append("\t").append(name).append(", \n");
+        allreducingTensorsDesc.append("\t").append(key).append(", \n");
 #endif
-        entries.emplace(name, entry);
-        allreduceSize += entry->tensorSize();
-        elements += entry->elements();
-        registeredTensors_.erase(iter);
+        requests.emplace(key, request);
+        allreduceSize += request->tensorSize();
+        elements += request->elements();
+        registeredRequest_.erase(iter);
     }
-    pthread_rwlock_unlock(&registerTensorLock_);
+    pthread_rwlock_unlock(&registerLock_);
 
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_ALLREDUCE
@@ -485,52 +388,7 @@ void RingTokenAllreduceController::allreduceByNames(const std::set<std::string> 
             "allreducing Tensors: " << allreducingTensorsDesc
                                     << " allreducing size: " << allreduceSize);
 #endif
-    checkAllreduceBuffer_(allreduceSize);
-    const auto firstEntry = entries.begin()->second;
-
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_ALLREDUCE_DETAIL
-    GLOBAL_INFO_WITH_RANK_THREAD_ID("copying memory from input tensors to tensorsallreduce buffer");
-#endif
-
-    offset = 0;
-    for (auto i = entries.begin(); i != entries.end(); ++i) {
-        TensorEntry *entry = i->second;
-        memcpy(
-                allreduceSendBuffer_ + offset,
-                entry->sendTensorData(),
-                entry->tensorSize()
-        );
-        offset += entry->tensorSize();
-    }
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_MPI_CALLS
-    GLOBAL_INFO_WITH_RANK_THREAD_ID("before mpi tensorsallreduce");
-#endif
-    MPI_Allreduce(
-            allreduceSendBuffer_, allreduceRecvBuffer_,
-            (int) elements,
-            MPICommunication::DataType2MPIType(firstEntry->dtype()),
-            MPI_SUM,
-            MPI_COMM_WORLD
-    );
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_ALLREDUCE_DETAIL
-    GLOBAL_INFO_WITH_RANK_THREAD_ID("mpi allreduced, copying memory from tensorsallreduce buffer to output tensors");
-#endif
-    offset = 0;
-    for (auto i = entries.begin(); i != entries.end(); ++i) {
-        TensorEntry *entry = i->second;
-        memcpy(
-                entry->recvTensorData(),
-                allreduceRecvBuffer_ + offset,
-                entry->tensorSize()
-        );
-        offset += entry->tensorSize();
-
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TF_OP_INTERACTION
-        GLOBAL_INFO_WITH_RANK_THREAD_ID("tensor:" << entry->name() << " done tensorsallreduce");
-#endif
-        entry->done(STATUS_OK);
-        delete entry;
-    }
+    return this->allreduceRequests(requests, elements, allreduceSize);
 }
 
 std::set<std::string> RingTokenAllreduceController::getNamesFromToken(const Token &token) {
@@ -582,6 +440,34 @@ void RingTokenAllreduceController::forceToStage_(RingTokenAllreduceController::S
     pthread_rwlock_unlock(&stageLock_);
 }
 
+std::shared_ptr<Token> RingTokenAllreduceController::communicationReceiveTokenFrom(int sender) const {
+    CALLING_ABSTRACT_INTERFACE_ERROR("RingTokenAllreduceController::communicationReceiveTokenFrom(int sender)");
+}
+
+void RingTokenAllreduceController::communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "RingTokenAllreduceController::"
+            "communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token)\n"
+            "hint: please make sure the destructor of the implement class of"
+            " RingTokenAllreduceController would call protected method:\n"
+            " RingTokenAllreduceController::notifyAndWaitThreadToShutDown()"
+            " to shut down sender receiver thread correctly"
+    );
+}
+
+StatusCode RingTokenAllreduceController::allreduceRequests(
+        const std::map<std::string, TensorAllreduceRequest *> &requests,
+        size_t elements, size_t byteSize
+) const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "RingTokenAllreduceController::"
+            "allreduceRequests(const std::map<std::string,"
+            " TensorAllreduceRequest *> &requests,"
+            " size_t elements, size_t byteSize)"
+    );
+}
+
+
 std::string RingTokenAllreduceController::stageName_(RingTokenAllreduceController::Stage stage) {
     switch (stage) {
         case RTAC_INIT:
@@ -601,4 +487,12 @@ std::string RingTokenAllreduceController::stageName_(RingTokenAllreduceControlle
     }
     return "RTAC_UNKNOWN";
 }
-}}}}}
+
+void RingTokenAllreduceController::notifyAndWaitThreadToShutDown() {
+    fillTokenSendBufferAndNotify(std::make_shared<Token>(Token::shutDownToken()));
+    sendThread_.join();
+    recvThread_.join();
+}
+
+}
+}}}}

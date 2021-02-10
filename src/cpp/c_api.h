@@ -6,9 +6,9 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_C_API_H
 namespace lyl232 { namespace experiment { namespace ddl {
 extern "C" {
-int mpi_world_size();
+int processes();
 
-int mpi_world_rank();
+int process_rank();
 }
 }}}
 

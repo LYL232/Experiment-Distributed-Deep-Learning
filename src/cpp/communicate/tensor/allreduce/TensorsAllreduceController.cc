@@ -10,9 +10,20 @@ StatusCode TensorsAllreduceController::handleTenorAllreduceRequest(
         const std::string &name,
         std::shared_ptr<tensorflow::Tensor> sendTensor,
         std::shared_ptr<tensorflow::Tensor> recvTensor,
-        std::function<void(StatusCode)> done) {
-    throw std::runtime_error("trying calling raw handleTenorAllreduceRequest");
+        std::function<void(StatusCode)> done,
+        Operation op) {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "trying calling abstract interface: TensorsAllreduceController::handleTenorAllreduceRequest"
+            );
+}
+
+bool TensorsAllreduceController::initialized() const {
+    throw std::runtime_error(
+            "trying calling abstract interface: TensorsAllreduceController::initialized"
+    );
 }
 
 TensorsAllreduceController::~TensorsAllreduceController() {}
+
+
 }}}}

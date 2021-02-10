@@ -6,6 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_DEF_H
 
 #include <cstddef>
+#include <stdexcept>
 #include "tensorflow/core/framework/types.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -81,5 +82,10 @@ inline tensorflow::Status statusCode2TFStatus(StatusCode code) {
             return tensorflow::errors::Unknown("unknown reason");
     }
 }
+
+// 因为tensorflow的动态加载库无法识别抽象类的符号, 导致unknown symbol的错误, 所以所有抽象类都
+// 暂时转变为实体类, 原本的纯虚方法调用以下的宏在运行时抛出异常
+#define CALLING_ABSTRACT_INTERFACE_ERROR(msg) \
+    throw std::runtime_error(msg)
 }}}
 #endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_DEF_H
