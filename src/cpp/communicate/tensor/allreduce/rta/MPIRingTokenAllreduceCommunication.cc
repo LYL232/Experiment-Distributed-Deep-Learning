@@ -1,25 +1,25 @@
 //
-// Created by LYL232 on 2021/2/11.
+// Created by LYL232 on 2021/2/12.
 //
 
-#include "MPIRingTokenAllreduceController.h"
+#include "MPIRingTokenAllreduceCommunication.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace tensorsallreduce { namespace rta {
 
-double MPIRingTokenAllreduceController::inflateFactor_ = 1.5;
+double MPIRingTokenAllreduceCommunication::inflateFactor_ = 1.5;
 
-MPIRingTokenAllreduceController::MPIRingTokenAllreduceController(
-        std::ostream &initializingLogStream, std::shared_ptr<MPIBackend> communication)
-        : RingTokenAllreduceController(initializingLogStream, communication),
-          communication_(communication),
+MPIRingTokenAllreduceCommunication::MPIRingTokenAllreduceCommunication(
+        std::shared_ptr<MPIBackend> backend)
+        : RingTokenAllreduceCommunication(),
           statusBuffer_(),
           sendBuffer_(nullptr), recvBuffer_(nullptr),
           allreduceSendBuffer_(nullptr), allreduceRecvBuffer_(nullptr),
           sendBufferSize_(0), recvBufferSize_(0), allreduceBufferSize_(0),
-          tokenMetaSize_(sizeof(Token::Type) + sizeof(size_t)) {}
+          tokenMetaSize_(sizeof(Token::Type) + sizeof(size_t)),
+          backend_(backend) {}
 
 void
-MPIRingTokenAllreduceController::communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const {
+MPIRingTokenAllreduceCommunication::communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const {
     using namespace std;
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_RANK_THREAD_ID("before mpi sending Token");
@@ -46,10 +46,9 @@ MPIRingTokenAllreduceController::communicationSendTokenTo(int receiver, const st
 #endif
 }
 
-std::shared_ptr<Token> MPIRingTokenAllreduceController::communicationReceiveTokenFrom(int sender) const {
-    auto &global = Global::get();
-    int rank = global.processRank(),
-            processes = global.processes(),
+std::shared_ptr<Token> MPIRingTokenAllreduceCommunication::communicationReceiveTokenFrom(int sender) const {
+    int rank = backend_->processRank(),
+            processes = backend_->processes(),
             senderRank = (rank - 1 + processes) % processes,
             offset;
     size_t stringSize;
@@ -84,7 +83,7 @@ std::shared_ptr<Token> MPIRingTokenAllreduceController::communicationReceiveToke
 }
 
 StatusCode
-MPIRingTokenAllreduceController::allreduceRequests(
+MPIRingTokenAllreduceCommunication::allreduceRequests(
         const std::map<std::string, TensorAllreduceRequest *> &requests,
         size_t elements, size_t byteSize) const {
     int offset = 0;
@@ -107,7 +106,7 @@ MPIRingTokenAllreduceController::allreduceRequests(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_ALLREDUCE_DETAIL
     GLOBAL_INFO_WITH_RANK_THREAD_ID("before allreduce");
 #endif
-    communication_->allreduce(
+    backend_->allreduce(
             allreduceSendBuffer_, allreduceRecvBuffer_,
             elements,
             firstRequest->dtype(),
@@ -143,7 +142,7 @@ MPIRingTokenAllreduceController::allreduceRequests(
     return STATUS_OK;
 }
 
-void MPIRingTokenAllreduceController::checkSendBuffer_(size_t bytesRequire) const {
+void MPIRingTokenAllreduceCommunication::checkSendBuffer_(size_t bytesRequire) const {
     if (sendBufferSize_ < bytesRequire) {
         delete[]sendBuffer_;
         sendBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
@@ -151,7 +150,7 @@ void MPIRingTokenAllreduceController::checkSendBuffer_(size_t bytesRequire) cons
     }
 }
 
-void MPIRingTokenAllreduceController::checkRecvBuffer_(size_t bytesRequire) const {
+void MPIRingTokenAllreduceCommunication::checkRecvBuffer_(size_t bytesRequire) const {
     if (recvBufferSize_ < bytesRequire) {
         delete[]recvBuffer_;
         recvBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
@@ -159,7 +158,7 @@ void MPIRingTokenAllreduceController::checkRecvBuffer_(size_t bytesRequire) cons
     }
 }
 
-void MPIRingTokenAllreduceController::checkAllreduceBuffer_(size_t bytesRequire) const {
+void MPIRingTokenAllreduceCommunication::checkAllreduceBuffer_(size_t bytesRequire) const {
     if (allreduceBufferSize_ < bytesRequire) {
         delete[]allreduceSendBuffer_;
         delete[]allreduceRecvBuffer_;
@@ -169,13 +168,11 @@ void MPIRingTokenAllreduceController::checkAllreduceBuffer_(size_t bytesRequire)
     }
 }
 
-MPIRingTokenAllreduceController::~MPIRingTokenAllreduceController() {
-    this->notifyAndWaitThreadToShutDown();
+MPIRingTokenAllreduceCommunication::~MPIRingTokenAllreduceCommunication() {
     delete[]sendBuffer_;
     delete[]recvBuffer_;
     delete[]allreduceSendBuffer_;
     delete[]allreduceRecvBuffer_;
 }
-
 
 }}}}}

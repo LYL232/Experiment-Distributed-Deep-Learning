@@ -24,7 +24,9 @@ public:
 
     Token(Type type, std::string &&msg) : type_(type), msg_(msg) {};
 
-    Token(const Token &other) : type_(other.type_), msg_(other.msg_) {}
+    Token(const Token &) = delete;
+
+    Token(Token &&other) : type_(other.type_), msg_(std::move(other.msg_)) {}
 
     Type type() const { return type_; }
 

@@ -8,20 +8,18 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-int CommunicationBackend::processes() const noexcept {
-    assert(initialzed_);
-    return processes_;
+CommunicationBackend::CommunicationBackend() {}
+
+CommunicationBackend::~CommunicationBackend() {}
+
+int CommunicationBackend::processes() const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "CommunicationBackend::processes()");
 }
 
-int CommunicationBackend::processRank() const noexcept {
-    assert(initialzed_);
-    return processRank_;
-}
-
-void CommunicationBackend::initialize(int processes, int processRank) {
-    processes_ = processes;
-    processRank_ = processRank;
-    initialzed_ = true;
+int CommunicationBackend::processRank() const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "CommunicationBackend::processRank()");
 }
 
 StatusCode CommunicationBackend::allreduce(
@@ -32,9 +30,5 @@ StatusCode CommunicationBackend::allreduce(
             "void *sendBuffer, void *recvBuffer,"
             " size_t elements, DataType dtype, "
             " Operation op)");
-}
-
-void CommunicationBackend::finalize() {
-    CALLING_ABSTRACT_INTERFACE_ERROR("CommunicationBackend::finalize()");
 }
 }}}

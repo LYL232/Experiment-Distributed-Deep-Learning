@@ -13,51 +13,53 @@ std::string RingTokenAllreduceController::tokenNameSplitDelimiter_("\n");
 
 RingTokenAllreduceController::RingTokenAllreduceController(
         std::ostream &initializingLogStream,
-        std::shared_ptr<CommunicationBackend> communication
+        std::shared_ptr<CommunicationBackend> backend,
+        std::shared_ptr<RingTokenAllreduceCommunication> communicationImplement
 ) :
+        TensorsAllreduceController(backend),
         outMutex_(PTHREAD_MUTEX_INITIALIZER),
         registerLock_(PTHREAD_RWLOCK_INITIALIZER),
         stageLock_(PTHREAD_RWLOCK_INITIALIZER),
         outputTokenCond_(PTHREAD_COND_INITIALIZER),
         currentStage_(RTAC_INIT),
-        sendThread_(&RingTokenAllreduceController::sendMain_, this, communication),
-        recvThread_(&RingTokenAllreduceController::recvMain_, this, communication),
+        sendThread_(&RingTokenAllreduceController::sendMain_, this),
+        recvThread_(&RingTokenAllreduceController::recvMain_, this),
         outputtingTokenQueue_(),
         waitingReadyTokenName_(),
-        registeredRequest_() {
+        registeredRequest_(), communicationImplement_(communicationImplement) {
     std::string controllerLogStr("RingTokenAllreduceController:");
-    controllerLogStr.append(std::to_string((size_t) this)).append(" ");
+    controllerLogStr.append(std::to_string((size_t) this));
     initializingLogStream << STREAM_WITH_RANK(
             "new " << controllerLogStr << ", waiting for initialization" << std::endl,
-            communication->processRank());
+            backend_->processRank());
     while (!initialized()) {
         initializingLogStream << STREAM_WITH_RANK(
                 controllerLogStr << "initialization check failed" << std::endl,
-                communication->processRank());
+                backend_->processRank());
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
     initializingLogStream << STREAM_WITH_RANK(
-            controllerLogStr << "initialized" << std::endl, communication->processRank()
+            controllerLogStr << " initialized" << std::endl, backend_->processRank()
     );
 
 }
 
 RingTokenAllreduceController::~RingTokenAllreduceController() {
+    fillTokenSendBufferAndNotify(std::make_shared<Token>(Token::shutDownToken()));
+    sendThread_.join();
+    recvThread_.join();
     pthread_mutex_destroy(&outMutex_);
     pthread_rwlock_destroy(&stageLock_);
     pthread_rwlock_destroy(&registerLock_);
     pthread_cond_destroy(&outputTokenCond_);
 }
 
-void RingTokenAllreduceController::sendMain_(
-        std::shared_ptr<CommunicationBackend> communication
-) {
+void RingTokenAllreduceController::sendMain_() {
     using namespace std;
-    int rank = communication->processRank(),
-            processes = communication->processes(),
+    int rank = backend_->processRank(),
+            processes = backend_->processes(),
             receiverRank = (rank + 1) % processes;
-
-    while (communication->processes() > 1 && !inStage_(RTAC_SHUT_DOWN)) {
+    while (backend_->processes() > 1 && !inStage_(RTAC_SHUT_DOWN)) {
         pthread_mutex_lock(&outMutex_);
         if (inStage_(RTAC_INIT)) {
             if (rank == 0) {
@@ -85,7 +87,7 @@ void RingTokenAllreduceController::sendMain_(
             auto token = sendingTokens.front();
             sendingTokens.pop();
 
-            this->communicationSendTokenTo(receiverRank, token);
+            communicationImplement_->communicationSendTokenTo(receiverRank, token);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
             GLOBAL_INFO_WITH_RANK_THREAD_ID("sent Token " << token->desc());
 #endif
@@ -102,19 +104,18 @@ void RingTokenAllreduceController::sendMain_(
 #endif
 }
 
-void RingTokenAllreduceController::recvMain_(std::shared_ptr<CommunicationBackend> communication) {
+void RingTokenAllreduceController::recvMain_() {
     using namespace std;
-    int rank = communication->processRank(),
-            processes = communication->processes(),
+    int rank = backend_->processRank(),
+            processes = backend_->processes(),
             senderRank = (rank - 1 + processes) % processes;
-
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_THREAD_MANNER
     GLOBAL_INFO_WITH_RANK_THREAD_ID("receive thread started");
 #endif
 
-    while (Global::get().processes() > 1 && !inStage_(RTAC_SHUT_DOWN)) {
+    while (backend_->processes() > 1 && !inStage_(RTAC_SHUT_DOWN)) {
 
-        auto token = this->communicationReceiveTokenFrom(senderRank);
+        auto token = communicationImplement_->communicationReceiveTokenFrom(senderRank);
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TOKEN
         GLOBAL_INFO_WITH_RANK_THREAD_ID("received Token " << token->desc());
@@ -317,7 +318,6 @@ StatusCode RingTokenAllreduceController::handleTenorAllreduceRequest(
         std::function<void(StatusCode)> done,
         Operation op) {
     using namespace std;
-    auto &global = Global::get();
     assert(!inStage_(RTAC_INIT));
     pthread_rwlock_wrlock(&registerLock_);
     assert(registeredRequest_.find(key) == registeredRequest_.end());
@@ -326,7 +326,7 @@ StatusCode RingTokenAllreduceController::handleTenorAllreduceRequest(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_TF_OP_INTERACTION
     GLOBAL_INFO_WITH_RANK_THREAD_ID("op request to allreuce tensor: " << key);
 #endif
-    if (global.processRank() == 0) {
+    if (backend_->processRank() == 0) {
         if (inStage_(RTAC_WAITING_TENSORS)) {
             fromStageToStage_(RTAC_WAITING_TENSORS, RTAC_WAITING_READY_TOKEN);
             fillTokenSendBufferAndNotify(make_shared<Token>(Token::TOKEN_TYPE_READY, key));
@@ -388,7 +388,7 @@ StatusCode RingTokenAllreduceController::allreduceByNames(const std::set<std::st
             "allreducing Tensors: " << allreducingTensorsDesc
                                     << " allreducing size: " << allreduceSize);
 #endif
-    return this->allreduceRequests(requests, elements, allreduceSize);
+    return communicationImplement_->allreduceRequests(requests, elements, allreduceSize);
 }
 
 std::set<std::string> RingTokenAllreduceController::getNamesFromToken(const Token &token) {
@@ -440,33 +440,6 @@ void RingTokenAllreduceController::forceToStage_(RingTokenAllreduceController::S
     pthread_rwlock_unlock(&stageLock_);
 }
 
-std::shared_ptr<Token> RingTokenAllreduceController::communicationReceiveTokenFrom(int sender) const {
-    CALLING_ABSTRACT_INTERFACE_ERROR("RingTokenAllreduceController::communicationReceiveTokenFrom(int sender)");
-}
-
-void RingTokenAllreduceController::communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const {
-    CALLING_ABSTRACT_INTERFACE_ERROR(
-            "RingTokenAllreduceController::"
-            "communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token)\n"
-            "hint: please make sure the destructor of the implement class of"
-            " RingTokenAllreduceController would call protected method:\n"
-            " RingTokenAllreduceController::notifyAndWaitThreadToShutDown()"
-            " to shut down sender receiver thread correctly"
-    );
-}
-
-StatusCode RingTokenAllreduceController::allreduceRequests(
-        const std::map<std::string, TensorAllreduceRequest *> &requests,
-        size_t elements, size_t byteSize
-) const {
-    CALLING_ABSTRACT_INTERFACE_ERROR(
-            "RingTokenAllreduceController::"
-            "allreduceRequests(const std::map<std::string,"
-            " TensorAllreduceRequest *> &requests,"
-            " size_t elements, size_t byteSize)"
-    );
-}
-
 
 std::string RingTokenAllreduceController::stageName_(RingTokenAllreduceController::Stage stage) {
     switch (stage) {
@@ -486,12 +459,6 @@ std::string RingTokenAllreduceController::stageName_(RingTokenAllreduceControlle
             return "RTAC_SHUT_DOWN";
     }
     return "RTAC_UNKNOWN";
-}
-
-void RingTokenAllreduceController::notifyAndWaitThreadToShutDown() {
-    fillTokenSendBufferAndNotify(std::make_shared<Token>(Token::shutDownToken()));
-    sendThread_.join();
-    recvThread_.join();
 }
 
 }

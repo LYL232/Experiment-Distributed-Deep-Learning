@@ -5,31 +5,26 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_GLOBAL_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_GLOBAL_H
 
-#include <atomic>
-#include <iostream>
 #include <pthread.h>
 #include <sstream>
 #include <functional>
 #include <thread>
 #include <map>
-#include <communicate/communication/CommunicationBackend.h>
+#include "global/GlobalLogStream.h"
+#include "communicate/communication/CommunicationBackend.h"
+#include "communicate/tensor/allreduce/TensorsAllreduceController.h"
 
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 class CommunicationBackend;
 
-namespace tensorsallreduce {
-class TensorsAllreduceController;
-}
-
 /**
  * 单例模式: 全局对象类
- * 该类本该是抽象类, 但是由于动态加载库无法识别抽象类的符号, 所以实现为具体类
  */
 class Global {
 public:
-    Global();
+    Global() = delete;
 
     Global(const Global &) = delete;
 
@@ -41,36 +36,33 @@ public:
 
     static Global &get() noexcept;
 
-    CommunicationBackend &communication() const noexcept;
+    CommunicationBackend &communicationBackend() const noexcept;
 
     tensorsallreduce::TensorsAllreduceController &allreduceController() const noexcept;
 
-    void log(std::ostringstream &stream) const noexcept;
+    void log(std::ostringstream &stream) noexcept;
 
     std::ostringstream &thisThreadLogStream() const noexcept;
 
-    bool initialized() const noexcept;
-
     ~Global();
 
-protected:
-    static void initialize(
-            Global *singleton,
-            std::ostream *log,
-            std::function<void()> logStreamDestructor,
+private:
+
+    Global(
             std::shared_ptr<CommunicationBackend> communicationBackend,
-            tensorsallreduce::TensorsAllreduceController *allreduceController
+            std::shared_ptr<tensorsallreduce::TensorsAllreduceController> allreduceController,
+            std::shared_ptr<GlobalLogStream> logStream
     );
 
-    static Global *instancePtr_;
-private:
-    std::ostream *log_;
-    std::function<void()> logStreamDestructor_;
+
     mutable std::map<std::thread::id, std::ostringstream *> threadLogStream_;
     mutable pthread_rwlock_t rwlock_;
-    mutable std::shared_ptr<CommunicationBackend> communication_;
-    mutable tensorsallreduce::TensorsAllreduceController *allreduceController_;
-    mutable std::atomic_bool initialized_;
+    mutable std::shared_ptr<CommunicationBackend> communicationBackend_;
+    mutable std::shared_ptr<tensorsallreduce::TensorsAllreduceController>
+            allreduceController_;
+    std::shared_ptr<GlobalLogStream> logStream_;
+
+    static Global instance_;
 };
 
 #define STREAM_WITH_RANK(s, rank) \

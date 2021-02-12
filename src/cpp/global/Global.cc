@@ -4,54 +4,42 @@
 
 #include <assert.h>
 #include "global/Global.h"
-#include "communicate/tensor/allreduce/TensorsAllreduceController.h"
+#include "global/initialize.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-Global *Global::instancePtr_ = nullptr;
 
-Global::Global() :
-        log_(nullptr), logStreamDestructor_([]() {}),
-        threadLogStream_(),
-        rwlock_(PTHREAD_RWLOCK_INITIALIZER),
-        communication_(nullptr),
-        allreduceController_(nullptr),
-        initialized_(false) {
-}
+Global Global::instance_(
+        communicationBackendGetter(),
+        allreduceControllerGetter(),
+        globalLogStreamGetter()
+);
 
-void Global::initialize(
-        Global *singleton,
-        std::ostream *log,
-        std::function<void()> logStreamDestructor,
+Global::Global(
         std::shared_ptr<CommunicationBackend> communicationBackend,
-        tensorsallreduce::TensorsAllreduceController *allreduceController) {
-    singleton->log_ = log;
-    singleton->logStreamDestructor_ = logStreamDestructor;
-    singleton->communication_ = communicationBackend;
-    singleton->allreduceController_ = allreduceController;
-    singleton->initialized_ = true;
-    instancePtr_ = singleton;
-    GLOBAL_INFO_WITH_RANK("Global initialized");
+        std::shared_ptr<tensorsallreduce::TensorsAllreduceController> allreduceController,
+        std::shared_ptr<GlobalLogStream> logStream
+) : threadLogStream_(),
+    rwlock_(PTHREAD_RWLOCK_INITIALIZER),
+    communicationBackend_(communicationBackend),
+    allreduceController_(allreduceController),
+    logStream_(logStream) {
+    logStream_->stream()
+            << STREAM_WITH_RANK("Global initialized", communicationBackend_->processRank())
+            << std::endl;
 }
 
 Global::~Global() {
     GLOBAL_INFO_WITH_RANK("Global finalizing");
-    // 之所以使用指针来指向, 是因为需要在delete communicationBackend_之前确认其他的通信资源得到释放(比如MPI), 而
-    // delete指针可以做到这一点
-    delete allreduceController_;
-    communication_->finalize();
-    GLOBAL_INFO_WITH_RANK("Global finalized");
-    logStreamDestructor_();
     pthread_rwlock_destroy(&rwlock_);
     for (auto iter = threadLogStream_.begin(); iter != threadLogStream_.end(); ++iter) {
         delete iter->second;
     }
-    instancePtr_ = nullptr;
 }
 
-void Global::log(std::ostringstream &stream) const noexcept {
+void Global::log(std::ostringstream &stream) noexcept {
     pthread_rwlock_wrlock(&rwlock_);
-    *log_ << stream.str() << std::endl;
+    logStream_->stream() << stream.str() << std::endl;
     pthread_rwlock_unlock(&rwlock_);
     stream.str(std::string());
     stream.clear();
@@ -74,18 +62,15 @@ std::ostringstream &Global::thisThreadLogStream() const noexcept {
 }
 
 Global &Global::get() noexcept {
-    while (instancePtr_ == nullptr) {
-        std::this_thread::sleep_for(std::chrono::microseconds (10));
-    }
-    return *instancePtr_;
+    return instance_;
 }
 
 int Global::processes() const noexcept {
-    return communication_->processes();
+    return communicationBackend_->processes();
 }
 
 int Global::processRank() const noexcept {
-    return communication_->processRank();
+    return communicationBackend_->processRank();
 }
 
 tensorsallreduce::TensorsAllreduceController &Global::allreduceController() const noexcept {
@@ -93,13 +78,8 @@ tensorsallreduce::TensorsAllreduceController &Global::allreduceController() cons
     return *allreduceController_;
 }
 
-CommunicationBackend &Global::communication() const noexcept {
-    assert(communication_ != nullptr);
-    return *communication_;
-}
-
-bool Global::initialized() const noexcept {
-    return initialized_;
+CommunicationBackend &Global::communicationBackend() const noexcept {
+    return *communicationBackend_;
 }
 
 }}}

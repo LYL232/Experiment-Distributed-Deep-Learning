@@ -16,6 +16,7 @@
 #include "communicate/tensor/allreduce/TensorsAllreduceController.h"
 #include "communicate/tensor/allreduce/TensorAllreduceRequest.h"
 #include "communicate/tensor/allreduce/rta/Token.h"
+#include "communicate/tensor/allreduce/rta/RingTokenAllreduceCommunication.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace tensorsallreduce { namespace rta {
 
@@ -32,7 +33,8 @@ public:
 
     RingTokenAllreduceController(
             std::ostream &initializingLogStream,
-            std::shared_ptr<CommunicationBackend> communication
+            std::shared_ptr<CommunicationBackend> backend,
+            std::shared_ptr<RingTokenAllreduceCommunication> communicationImplement
     );
 
     RingTokenAllreduceController(const RingTokenAllreduceController &) = delete;
@@ -50,19 +52,6 @@ public:
     virtual bool initialized() const noexcept override final { return currentStage_ != RTAC_INIT; }
 
     virtual ~RingTokenAllreduceController();
-
-protected:
-    virtual void communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const;
-
-    virtual std::shared_ptr<Token> communicationReceiveTokenFrom(int sender) const;
-
-    virtual StatusCode allreduceRequests(
-            const std::map<std::string, TensorAllreduceRequest *> &requests,
-            size_t elements, size_t byteSize
-    ) const;
-
-    void notifyAndWaitThreadToShutDown();
-
 private:
     enum Stage : int {
         RTAC_INIT = 0,
@@ -85,6 +74,8 @@ private:
     std::string waitingReadyTokenName_;
     std::map<std::string, TensorAllreduceRequest *> registeredRequest_;
 
+    std::shared_ptr<RingTokenAllreduceCommunication> communicationImplement_;
+
     static std::string tokenNameSplitDelimiter_;
 
     void fromStageToStage_(Stage from, Stage to);
@@ -96,14 +87,14 @@ private:
     /**
      * 后台发送线程主函数
      */
-    void sendMain_(std::shared_ptr<CommunicationBackend> communication);
+    void sendMain_();
 
     void fillTokenSendBufferAndNotify(std::shared_ptr<Token> token);
 
     /**
      * 后台接收线程主函数
      */
-    void recvMain_(std::shared_ptr<CommunicationBackend> communication);
+    void recvMain_();
 
     void handleReceivingTokenAsTokenGenerator(std::shared_ptr<Token> token);
 

@@ -6,6 +6,10 @@
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace tensorsallreduce {
 
+TensorsAllreduceController::TensorsAllreduceController(
+        std::shared_ptr<CommunicationBackend> backend) : backend_(backend) {}
+
+
 StatusCode TensorsAllreduceController::handleTenorAllreduceRequest(
         const std::string &name,
         std::shared_ptr<tensorflow::Tensor> sendTensor,
@@ -14,7 +18,7 @@ StatusCode TensorsAllreduceController::handleTenorAllreduceRequest(
         Operation op) {
     CALLING_ABSTRACT_INTERFACE_ERROR(
             "trying calling abstract interface: TensorsAllreduceController::handleTenorAllreduceRequest"
-            );
+    );
 }
 
 bool TensorsAllreduceController::initialized() const {

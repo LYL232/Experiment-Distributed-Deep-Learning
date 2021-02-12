@@ -1,18 +1,16 @@
 //
-// Created by LYL232 on 2021/2/11.
+// Created by LYL232 on 2021/2/12.
 //
 
-#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIRINGTOKENALLREDUCECONTROLLER_H
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIRINGTOKENALLREDUCECONTROLLER_H
+#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIRINGTOKENALLREDUCECOMMUNICATION_H
+#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIRINGTOKENALLREDUCECOMMUNICATION_H
 
 #include "communicate/communication/mpi/MPIBackend.h"
-#include "communicate/tensor/allreduce/rta/RingTokenAllreduceController.h"
+#include "communicate/tensor/allreduce/rta/RingTokenAllreduceCommunication.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace tensorsallreduce { namespace rta {
 
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_MPI_CALLS 0
-
-class MPIRingTokenAllreduceController : public RingTokenAllreduceController {
+class MPIRingTokenAllreduceCommunication : public RingTokenAllreduceCommunication {
 public:
     // 为了统计所有mpi tag的使用情况, 只能出此下策
 #ifndef MPI_USED_TAG_COUNTER
@@ -27,20 +25,17 @@ public:
 #define MPI_USED_TAG_COUNTER MPI_USED_TAG_COUNTER_TEMP
 #undef MPI_USED_TAG_COUNTER_TEMP
 
-    MPIRingTokenAllreduceController(
-            std::ostream &initializingLogStream,
+    MPIRingTokenAllreduceCommunication(
             std::shared_ptr<MPIBackend> backend
     );
 
-    MPIRingTokenAllreduceController(const MPIRingTokenAllreduceController &) = delete;
+    MPIRingTokenAllreduceCommunication(const MPIRingTokenAllreduceCommunication &) = delete;
 
-    MPIRingTokenAllreduceController(MPIRingTokenAllreduceController &&) = delete;
+    MPIRingTokenAllreduceCommunication(MPIRingTokenAllreduceCommunication &&) = delete;
 
-    ~MPIRingTokenAllreduceController();
+    ~MPIRingTokenAllreduceCommunication();
 
 private:
-    std::shared_ptr<MPIBackend> communication_;
-
     mutable MPI_Status statusBuffer_;
 
     mutable char *sendBuffer_, *recvBuffer_,
@@ -48,6 +43,7 @@ private:
     mutable size_t sendBufferSize_, recvBufferSize_,
             allreduceBufferSize_, tokenMetaSize_;
 
+    std::shared_ptr<MPIBackend> backend_;
 
     static double inflateFactor_;
 
@@ -69,4 +65,4 @@ private:
 
 }}}}}
 
-#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIRINGTOKENALLREDUCECONTROLLER_H
+#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIRINGTOKENALLREDUCECOMMUNICATION_H

@@ -5,6 +5,7 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIBACKEND_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIBACKEND_H
 
+#include <mutex>
 #include "mpi.h"
 #include "communicate/communication/CommunicationBackend.h"
 
@@ -29,6 +30,10 @@ public:
             size_t elements, DataType dtype,
             AllreduceOperation op) const override;
 
+    virtual int processes() const override;
+
+    virtual int processRank() const override;
+
     /**
      * DataType到MPI_TYPE的映射
      * @param dtype
@@ -43,11 +48,16 @@ public:
      */
     static MPI_Op AllreduceOperation2MPIOp(AllreduceOperation op) noexcept;
 
-protected:
-    virtual void finalize() override final;
-
 private:
-    static int processes_, processRank_;
+    static std::mutex mutex_;
+    static int processes_, processRank_, refs_;
+    static bool initialized_, finalized_;
+
+    static int processesImpl_(int *argc = nullptr, char ***argv = nullptr);
+
+    static int processRankImpl_(int *argc = nullptr, char ***argv = nullptr);
+
+    static void initialize_(int *argc = nullptr, char ***argv = nullptr);
 };
 
 }}}

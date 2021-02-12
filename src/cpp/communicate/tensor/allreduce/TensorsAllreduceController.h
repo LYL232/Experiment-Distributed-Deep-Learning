@@ -5,7 +5,6 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORSALLREDUCECONTROLLER_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORSALLREDUCECONTROLLER_H
 
-#include "def.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "communicate/communication/CommunicationBackend.h"
 
@@ -21,6 +20,8 @@ namespace lyl232 { namespace experiment { namespace ddl { namespace tensorsallre
 class TensorsAllreduceController {
 public:
     using Operation = CommunicationBackend::AllreduceOperation;
+
+    TensorsAllreduceController(std::shared_ptr<CommunicationBackend> backend);
 
     /**
      * 异步处理Op请求进行Allreduce的Tensor方法: 将Tensor信息提交至后台守护线程后直接返回,
@@ -42,6 +43,9 @@ public:
     virtual bool initialized() const;
 
     virtual ~TensorsAllreduceController();
+
+protected:
+    std::shared_ptr<CommunicationBackend> backend_;
 };
 }}}}
 

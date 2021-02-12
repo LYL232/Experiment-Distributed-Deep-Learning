@@ -10,30 +10,37 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
+std::mutex MPIBackend::mutex_;
+bool MPIBackend::initialized_ = false;
+bool MPIBackend::finalized_ = false;
 int MPIBackend::processes_ = -1;
 int MPIBackend::processRank_ = -1;
+int MPIBackend::refs_ = 0;
 
-MPIBackend::MPIBackend(int *argc, char ***argv) {
-    if (processes_ < 0 || processRank_ < 0) {
-        int provided, required = MPI_THREAD_MULTIPLE;
-        MPI_Init_thread(argc, argv, required, &provided);
-        if (provided < required) {
-            std::cerr << "ERROR: environment dose not provide mpi thread requirement" << std::endl;
-            throw std::runtime_error(
-                    "environment dose not provide MPI_THREAD_MULTIPLE requirement"
-            );
-        }
-        MPI_Comm_size(MPI_COMM_WORLD, &processes_);
-        MPI_Comm_rank(MPI_COMM_WORLD, &processRank_);
+
+MPIBackend::MPIBackend(int *argc, char ***argv) : CommunicationBackend() {
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (finalized_) {
+        std::cerr << "ERROR: trying constructing MPIBackend after MPI_Finalize" << std::endl;
+        throw std::runtime_error(
+                "trying constructing MPIBackend after MPI_Finalize"
+        );
     }
-    initialize(processes_, processRank_);
+    if (!initialized_) {
+        initialize_(argc, argv);
+    }
+    refs_++;
 }
 
-MPIBackend::~MPIBackend() {}
-
-void MPIBackend::finalize() {
-    MPI_Finalize();
-    processes_ = processRank_ = -1;
+MPIBackend::~MPIBackend() {
+    std::lock_guard<std::mutex> guard(mutex_);
+    --refs_;
+    if (refs_ == 0) {
+        if (!finalized_) {
+            MPI_Finalize();
+            finalized_ = true;
+        }
+    }
 }
 
 StatusCode MPIBackend::allreduce(
@@ -75,6 +82,44 @@ MPI_Op MPIBackend::AllreduceOperation2MPIOp(AllreduceOperation op) noexcept {
             return MPI_SUM;
     }
     return MPI_OP_NULL;
+}
+
+int MPIBackend::processesImpl_(int *argc, char ***argv) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (!initialized_) {
+        initialize_(argc, argv);
+    }
+    return processes_;
+}
+
+int MPIBackend::processRankImpl_(int *argc, char ***argv) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (!initialized_) {
+        initialize_(argc, argv);
+    }
+    return processRank_;
+}
+
+void MPIBackend::initialize_(int *argc, char ***argv) {
+    int provided, required = MPI_THREAD_MULTIPLE;
+    MPI_Init_thread(argc, argv, required, &provided);
+    if (provided < required) {
+        std::cerr << "ERROR: environment dose not provide mpi thread requirement" << std::endl;
+        throw std::runtime_error(
+                "environment dose not provide MPI_THREAD_MULTIPLE requirement"
+        );
+    }
+    MPI_Comm_size(MPI_COMM_WORLD, &processes_);
+    MPI_Comm_rank(MPI_COMM_WORLD, &processRank_);
+    initialized_ = true;
+}
+
+int MPIBackend::processes() const {
+    return processesImpl_(nullptr, nullptr);
+}
+
+int MPIBackend::processRank() const {
+    return processRankImpl_(nullptr, nullptr);
 }
 
 }}}

@@ -18,15 +18,15 @@ public:
         ALLREDUCE_OP_SUM = 0,
     };
 
-    CommunicationBackend() = default;
+    CommunicationBackend();
 
     CommunicationBackend(const CommunicationBackend &) = delete;
 
     CommunicationBackend(CommunicationBackend &&) = delete;
 
-    int processes() const noexcept;
+    virtual int processes() const;
 
-    int processRank() const noexcept;
+    virtual int processRank() const;
 
     /**
      * 全规约通信
@@ -43,18 +43,8 @@ public:
             AllreduceOperation op) const;
 
 
-    virtual ~CommunicationBackend() {}
-
-protected:
-    // 要求子类继承实例化之后执行该方法, 相当于构造函数回调, 之所以这样实现
-    // 是因为如MPI的初始化无法在构造函数中进行
-    void initialize(int processes, int processRank);
-
-    virtual void finalize();
-
+    virtual ~CommunicationBackend();
 private:
-    int processes_ = -1, processRank_ = -1;
-    bool initialzed_ = false;
 };
 
 }}}
