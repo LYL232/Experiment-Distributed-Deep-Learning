@@ -29,17 +29,6 @@ void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
             context, context->allocate_output(0, input.shape(), &output), done
     );
 
-//    string inputName("Tensor-0");
-//
-//    const string &originalName = name();
-//
-//    for (auto i = originalName.begin(); i != originalName.end(); ++i) {
-//        char c = *i;
-//        if (c <= '9' && c >= '0') {
-//            inputName.append(std::to_string((int) c - '0'));
-//        }
-//    }
-
     OP_REQUIRES_OK_ASYNC(context, statusCode2TFStatus(
             lyl232::experiment::ddl::Global::get()
                     .allreduceController().handleTenorAllreduceRequest(
