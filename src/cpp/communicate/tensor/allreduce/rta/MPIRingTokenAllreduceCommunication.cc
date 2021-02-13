@@ -112,13 +112,6 @@ MPIRingTokenAllreduceCommunication::allreduceRequests(
             firstRequest->dtype(),
             firstRequest->op()
     );
-    MPI_Allreduce(
-            allreduceSendBuffer_, allreduceRecvBuffer_,
-            (int) elements,
-            MPIBackend::DataType2MPIType(firstRequest->dtype()),
-            MPI_SUM,
-            MPI_COMM_WORLD
-    );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_LOG_ALLREDUCE_DETAIL
     GLOBAL_INFO_WITH_RANK_THREAD_ID("allreduced, copying memory from allreduce buffer to output tensors");
 #endif
