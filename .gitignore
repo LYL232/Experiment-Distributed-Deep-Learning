@@ -5,3 +5,4 @@ third_party/tensorflow
 *.dll.a
 *.dll
 !release/lib.so
+__pycache__
