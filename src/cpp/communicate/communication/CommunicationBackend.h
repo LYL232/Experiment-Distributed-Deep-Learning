@@ -35,7 +35,7 @@ public:
      * @param elements 传输的元素个数
      * @param dtype tensorflow::DataType
      * @param op 进行的规约运算
-     * @return
+     * @return StatusCode
      */
     virtual StatusCode allreduce(
             void *sendBuffer, void *recvBuffer,
@@ -43,7 +43,21 @@ public:
             AllreduceOperation op) const;
 
 
+    /**
+     * 广播通信
+     * @param buffer 数据缓冲
+     * @param elements 传输的元素个数
+     * @param dtype tensorflow::DataType
+     * @param rootRank 根节点
+     * @return StatusCode
+     */
+    virtual StatusCode broadcast(
+            void *buffer,
+            size_t elements, DataType dtype,
+            int rootRank) const;
+
     virtual ~CommunicationBackend();
+
 private:
 };
 

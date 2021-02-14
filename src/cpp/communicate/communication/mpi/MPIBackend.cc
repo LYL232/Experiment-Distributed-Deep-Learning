@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <iostream>
 #include "global/Global.h"
-#include "MPIBackend.h"
+#include "communicate/communication/mpi/MPIBackend.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -58,6 +58,20 @@ StatusCode MPIBackend::allreduce(
     return STATUS_OK;
 }
 
+StatusCode MPIBackend::broadcast(
+        void *buffer, size_t elements, DataType dtype,
+        int rootRank) const {
+    MPI_Bcast(
+            buffer,
+            (int) elements,
+            DataType2MPIType(dtype),
+            rootRank,
+            MPI_COMM_WORLD
+    );
+    // todo: status check
+    return STATUS_OK;
+}
+
 int MPIBackend::DataType2MPIType(DataType dtype) noexcept {
     using namespace tensorflow;
     switch (dtype) {
@@ -72,7 +86,7 @@ int MPIBackend::DataType2MPIType(DataType dtype) noexcept {
         default:
             break;
     }
-    GLOBAL_ERROR_WITH_RANK_THREAD_ID("trying getting unsupported DataType: " << dtype);
+    GLOBAL_ERROR_WITH_THREAD_ID("trying getting unsupported DataType: " << dtype)
     return MPI_DATATYPE_NULL;
 }
 

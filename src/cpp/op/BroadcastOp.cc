@@ -1,27 +1,32 @@
 //
-// Created by LYL232 on 2021/2/6.
+// Created by LYL232 on 2021/2/12.
 //
 
+#include "op/BroadcastOp.h"
 #include "global/Global.h"
-#include "op/AllreduceOp.h"
 #include "communicate/collective/controller/TensorsCollectiveCommunicateController.h"
-#include "communicate/collective/allreduce/TensorAllreduceRequest.h"
+#include "communicate/collective/broadcast/TensorBroadcastRequest.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 using namespace tensorflow;
 
-REGISTER_OP("Allreduce")
+REGISTER_OP("Broadcast")
         .Attr("T: {int32, int64, float32, float64}")
+        .Attr("root_rank: int")
         .Input("tensor: T")
-        .Output("allreduced: T")
+        .Output("broadcasted: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
             return tensorflow::Status::OK();
         });
 
-void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
+BroadcastOp::BroadcastOp(tensorflow::OpKernelConstruction *context) : AsyncOpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("root_rank", &rootRank_));
+}
+
+void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace lyl232::experiment::ddl;
     using namespace std;
     // 获取输入 tensor
@@ -36,7 +41,7 @@ void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
 
     OP_REQUIRES_OK_ASYNC(context, statusCode2TFStatus(
             controller.handleRequest(
-                    make_shared<TensorAllreduceRequest>(
+                    make_shared<TensorBroadcastRequest>(
                             controller,
                             name(),
                             std::make_shared<Tensor>(input),
@@ -45,11 +50,10 @@ void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
                                 context->SetStatus(statusCode2TFStatus(code));
                                 done();
                             },
-                            TensorAllreduceRequest::Operation::ALLREDUCE_OP_SUM
+                            rootRank_
                     )
-            )), done
-    );
+            )), done);
 }
 
-REGISTER_KERNEL_BUILDER(Name("Allreduce").Device(DEVICE_CPU), AllreduceOp)
+REGISTER_KERNEL_BUILDER(Name("Broadcast").Device(DEVICE_CPU), BroadcastOp)
 }}}

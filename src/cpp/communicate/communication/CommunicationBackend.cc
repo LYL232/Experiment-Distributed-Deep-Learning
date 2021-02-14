@@ -3,7 +3,7 @@
 //
 
 #include <assert.h>
-#include "CommunicationBackend.h"
+#include "communicate/communication/CommunicationBackend.h"
 #include "def.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -31,4 +31,15 @@ StatusCode CommunicationBackend::allreduce(
             " size_t elements, DataType dtype, "
             " Operation op)");
 }
+
+StatusCode CommunicationBackend::broadcast(
+        void *buffer, size_t elements, DataType dtype,
+        int rootRank) const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "CommunicationBackend::broadcast("
+            "void *buffer,"
+            " size_t elements, DataType dtype, "
+            " int rootRank)");
+}
+
 }}}

@@ -7,19 +7,21 @@ set(CMAKE_CXX_STANDARD 11)
 
 list(APPEND SOURCES
         "${PROJECT_SOURCE_DIR}/src/cpp/global/Global.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/global/GlobalLogStream.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/global/GlobalLog.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/global/initialize.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/c_api.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/op/AllreduceOp.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/op/BroadcastOp.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/communication/CommunicationBackend.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/communication/mpi/MPIBackend.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/TensorCollectiveCommunicateRequest.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/TensorAllreduceRequest.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/RingTokenAllreduceController.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/RingTokenAllreduceCommunication.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/MPIRingTokenAllreduceCommunication.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/rta/Token.cc"
-        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/tensor/allreduce/TensorsAllreduceController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/TensorsCollectiveCommunicateController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/rtc/RingTokenCommunicateController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/rtc/Token.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/rtc/RingTokenCommunication.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/rtc/mpi/MPIRingTokenCommunication.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/TensorCollectiveCommunicateRequest.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/broadcast/TensorBroadcastRequest.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/allreduce/TensorAllreduceRequest.cc"
         )
 
 # PYTHON

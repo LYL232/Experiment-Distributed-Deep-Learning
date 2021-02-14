@@ -6,16 +6,16 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_INITIALIZE_H
 
 #include <fstream>
-#include "global/GlobalLogStream.h"
-#include "communicate/tensor/allreduce/TensorsAllreduceController.h"
+#include "global/GlobalLog.h"
+#include "communicate/collective/controller/TensorsCollectiveCommunicateController.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-std::shared_ptr<GlobalLogStream> globalLogStreamGetter();
+std::shared_ptr<GlobalLog> globalLogGetter();
 
 std::shared_ptr<CommunicationBackend> communicationBackendGetter();
 
-std::shared_ptr<tensorsallreduce::TensorsAllreduceController> allreduceControllerGetter();
+std::shared_ptr<TensorsCollectiveCommunicateController> collectiveCommunicateControllerGetter();
 
 }}}
 

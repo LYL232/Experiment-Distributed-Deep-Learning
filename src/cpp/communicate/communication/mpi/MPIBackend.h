@@ -30,6 +30,11 @@ public:
             size_t elements, DataType dtype,
             AllreduceOperation op) const override;
 
+    virtual StatusCode broadcast(
+            void *buffer,
+            size_t elements, DataType dtype,
+            int rootRank) const override;
+
     virtual int processes() const override;
 
     virtual int processRank() const override;

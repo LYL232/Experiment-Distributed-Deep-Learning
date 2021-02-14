@@ -6,10 +6,13 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOLLECTIVECOMMUNICATEREQUEST_H
 
 #include <memory>
+#include <vector>
 #include "tensorflow/core/framework/tensor.h"
 #include "def.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
+
+class TensorsCollectiveCommunicateController;
 
 /**
  * OP要求对Tensor进行组通信时的请求类, 提供一系列访问请求Tensor和结果Tensor的方法, 还有维护计算完毕时
@@ -17,6 +20,8 @@ namespace lyl232 { namespace experiment { namespace ddl {
  */
 class TensorCollectiveCommunicateRequest {
 public:
+    typedef std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>> Requests;
+
     /**
      * 检查两个Tensor的size和dtype是否一致再返回
      * 出现不一致则抛出异常
@@ -26,6 +31,7 @@ public:
      * @param done 完成时回调函数, 通过此函数通知此请求已经完成
      */
     TensorCollectiveCommunicateRequest(
+            TensorsCollectiveCommunicateController &controller,
             const std::string &key,
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
             std::shared_ptr<tensorflow::Tensor> resultTensor,
@@ -54,14 +60,20 @@ public:
 
     void *resultTensorData() const noexcept;
 
-    virtual ~TensorCollectiveCommunicateRequest() {};
+    virtual StatusCode doCollectiveCommunication(const Requests &requests);
 
+    virtual const char *requestTypeName() const;
+
+    virtual ~TensorCollectiveCommunicateRequest() {};
+protected:
+    TensorsCollectiveCommunicateController &controller_;
 private:
     std::string key_;
     mutable std::shared_ptr<tensorflow::Tensor> requestingTensor_, resultTensor_;
     std::function<void(StatusCode)> done_;
 
-    static void checkDtypeAndNumElements_(
+
+    static void checkTensorSize_(
             const std::shared_ptr<tensorflow::Tensor> &requestingTensor,
             const std::shared_ptr<tensorflow::Tensor> &resultTensor
     );

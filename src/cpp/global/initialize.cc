@@ -2,22 +2,23 @@
 // Created by LYL232 on 2021/2/12.
 //
 #include <mutex>
+#include "global/Global.h"
 #include "global/initialize.h"
 #include "communicate/communication/mpi/MPIBackend.h"
-#include "communicate/tensor/allreduce/rta/RingTokenAllreduceController.h"
-#include "communicate/tensor/allreduce/rta/MPIRingTokenAllreduceCommunication.h"
+#include "communicate/collective/controller/rtc/RingTokenCommunicateController.h"
+#include "communicate/collective/controller/rtc/mpi/MPIRingTokenCommunication.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 namespace initialize_implement {
 std::recursive_mutex mutex_;
 std::shared_ptr<MPIBackend> mpiBackend_;
-std::shared_ptr<tensorsallreduce::TensorsAllreduceController> allreduceController_;
-std::shared_ptr<GlobalLogStream> logStream_;
+std::shared_ptr<TensorsCollectiveCommunicateController> collectiveCommunicateController_;
+std::shared_ptr<GlobalLog> logStream_;
 }
 
 
-std::shared_ptr<GlobalLogStream> globalLogStreamGetter() {
+std::shared_ptr<GlobalLog> globalLogGetter() {
     using namespace initialize_implement;
     using namespace std;
     lock_guard<recursive_mutex> guard(mutex_);
@@ -25,11 +26,12 @@ std::shared_ptr<GlobalLogStream> globalLogStreamGetter() {
         string logFile("log-");
         int rank = communicationBackendGetter()->processRank();
         logFile.append(std::to_string(rank)).append(".txt");
-        auto log = make_shared<ofstream>(logFile);
+        ofstream *log = new ofstream(logFile);
         function<void()> logStreamDestructor = [log]() {
             log->close();
+            delete log;
         };
-        logStream_.reset(new GlobalLogStream(log, logStreamDestructor));
+        logStream_.reset(new GlobalLog(*log, logStreamDestructor));
     }
     return logStream_;
 }
@@ -44,19 +46,24 @@ std::shared_ptr<CommunicationBackend> communicationBackendGetter() {
     return mpiBackend_;
 }
 
-std::shared_ptr<tensorsallreduce::TensorsAllreduceController> allreduceControllerGetter() {
+std::shared_ptr<TensorsCollectiveCommunicateController>
+collectiveCommunicateControllerGetter() {
     using namespace initialize_implement;
     using namespace std;
     lock_guard<recursive_mutex> guard(mutex_);
-    if (!allreduceController_.get()) {
-        allreduceController_.reset(
-                new tensorsallreduce::rta::RingTokenAllreduceController(
-                globalLogStreamGetter()->stream(),
-                communicationBackendGetter(),
-                make_shared<tensorsallreduce::rta::MPIRingTokenAllreduceCommunication>(mpiBackend_)
-        ));
+    if (!collectiveCommunicateController_.get()) {
+        auto backend = communicationBackendGetter();
+
+        GLOBAL_INFO_WITH_THREAD_ID("new RingTokenCommunicateController")
+
+        collectiveCommunicateController_.reset(
+                new rtc::RingTokenCommunicateController(
+                        backend,
+                        make_shared<rtc::MPIRingTokenCommunication>(mpiBackend_)
+                ));
+        GLOBAL_INFO_WITH_THREAD_ID("new RingTokenCommunicateController initialized")
     }
-    return allreduceController_;
+    return collectiveCommunicateController_;
 }
 
 }}}
