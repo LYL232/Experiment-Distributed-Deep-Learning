@@ -7,7 +7,7 @@
 
 #include <mutex>
 #include "mpi.h"
-#include "communicate/communication/CommunicationBackend.h"
+#include "communicate/backend/CommunicationBackend.h"
 
 #define MPI_USED_TAG_COUNTER 0
 

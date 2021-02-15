@@ -5,7 +5,7 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORBROADCASTREQUEST_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORBROADCASTREQUEST_H
 
-#include "communicate/communication/CommunicationBackend.h"
+#include "communicate/backend/CommunicationBackend.h"
 #include "communicate/collective/TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {

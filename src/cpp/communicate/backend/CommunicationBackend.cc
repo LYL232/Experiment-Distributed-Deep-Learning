@@ -3,7 +3,7 @@
 //
 
 #include <assert.h>
-#include "communicate/communication/CommunicationBackend.h"
+#include "communicate/backend/CommunicationBackend.h"
 #include "def.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {

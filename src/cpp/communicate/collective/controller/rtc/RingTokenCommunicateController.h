@@ -10,7 +10,7 @@
 #include <queue>
 #include <map>
 #include <set>
-#include "communicate/communication/CommunicationBackend.h"
+#include "communicate/backend/CommunicationBackend.h"
 #include "communicate/collective/controller/TensorsCollectiveCommunicateController.h"
 #include "communicate/collective/controller/rtc/RingTokenCommunication.h"
 

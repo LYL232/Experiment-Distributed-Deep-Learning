@@ -6,7 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORSCOLLECTIVECOMMUNICATECONTROLLER_H
 
 #include <vector>
-#include "communicate/communication/CommunicationBackend.h"
+#include "communicate/backend/CommunicationBackend.h"
 #include "communicate/collective/TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {

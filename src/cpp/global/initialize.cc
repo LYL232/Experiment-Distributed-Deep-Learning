@@ -4,7 +4,7 @@
 #include <mutex>
 #include "global/Global.h"
 #include "global/initialize.h"
-#include "communicate/communication/mpi/MPIBackend.h"
+#include "communicate/backend/mpi/MPIBackend.h"
 #include "communicate/collective/controller/rtc/RingTokenCommunicateController.h"
 #include "communicate/collective/controller/rtc/mpi/MPIRingTokenCommunication.h"
 

@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <iostream>
 #include "global/Global.h"
-#include "communicate/communication/mpi/MPIBackend.h"
+#include "communicate/backend/mpi/MPIBackend.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 

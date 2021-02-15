@@ -6,7 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIRINGTOKENCOMMUNICATION_H
 
 #include <memory>
-#include "communicate/communication/mpi/MPIBackend.h"
+#include "communicate/backend/mpi/MPIBackend.h"
 #include "communicate/collective/controller/rtc/RingTokenCommunication.h"
 
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_DETAIL 0
