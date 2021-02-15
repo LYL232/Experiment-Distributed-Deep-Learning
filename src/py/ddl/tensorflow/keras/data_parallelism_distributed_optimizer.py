@@ -28,7 +28,7 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
     def apply_gradients(self, *args, **kwargs):
         results = super(self.__class__, self).apply_gradients(*args, **kwargs)
 
-        if not self.__gradients__allreduced:
+        if not self.__gradients_allreduced:
             raise Exception(
                 '`apply_gradients()` was called without a call to '
                 '`get_gradients()` or `_aggregate_gradients`. If you\'re '
@@ -54,7 +54,7 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
         if util.executing_eagerly():
             allreduce_grads = util.make_tf_function(allreduce_grads)
 
-        self.__gradients__allreduced = True
+        self.__gradients_allreduced = True
         return allreduce_grads()
 
 
