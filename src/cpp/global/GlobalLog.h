@@ -11,6 +11,7 @@
 #include <ostream>
 #include <sstream>
 #include <functional>
+#include "global/LogConfig.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 

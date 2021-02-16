@@ -9,17 +9,11 @@
 #include "communicate/backend/mpi/MPIBackend.h"
 #include "communicate/collective/controller/rtc/RingTokenCommunication.h"
 
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_DETAIL 0
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_MPI_CALLS 0
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 
 class MPIRingTokenCommunication : public RingTokenCommunication {
 public:
-    enum MPICommunicateTag : int {
-
-    };
-
     typedef std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>> Requests;
 
     MPIRingTokenCommunication(std::shared_ptr<MPIBackend> backend) noexcept;

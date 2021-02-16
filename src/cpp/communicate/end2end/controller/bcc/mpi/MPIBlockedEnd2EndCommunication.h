@@ -9,9 +9,6 @@
 #include "communicate/backend/mpi/MPIBackend.h"
 #include "communicate/end2end/controller/bcc/BlockedEnd2EndCommunication.h"
 
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL 1
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS 1
-
 namespace lyl232 { namespace experiment { namespace ddl { namespace bcc {
 
 class MPIBlockedEnd2EndCommunication : public BlockedEnd2EndCommunication {
