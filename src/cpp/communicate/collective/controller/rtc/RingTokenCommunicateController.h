@@ -24,6 +24,8 @@ namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 
 class RingTokenCommunicateController : public TensorsCollectiveCommunicateController {
 public:
+    typedef std::pair<std::string, std::string> RequestIdentifier;
+
     RingTokenCommunicateController(
             std::shared_ptr<CommunicationBackend> backend,
             std::shared_ptr<RingTokenCommunication> communicationImplement
@@ -63,10 +65,9 @@ private:
     std::thread sendThread_, recvThread_;
 
     std::queue<std::shared_ptr<Token>> outputtingTokenQueue_;
-    std::pair<std::string, std::string> waitingReadyTokenKey_;
+    RequestIdentifier waitingReadyTokenId_;
 
-    std::map<std::pair<std::string, std::string>,
-            std::shared_ptr<TensorCollectiveCommunicateRequest>> registeredRequest_;
+    std::map<RequestIdentifier, std::shared_ptr<TensorCollectiveCommunicateRequest>> registeredRequest_;
 
     std::shared_ptr<RingTokenCommunication> communicationImplement_;
 
@@ -84,21 +85,20 @@ private:
      */
     void sendMain_();
 
-    void fillTokenSendBufferAndNotify(std::shared_ptr<Token> token);
+    void fillTokenSendBufferAndNotify_(std::shared_ptr<Token> token);
 
     /**
      * 后台接收线程主函数
      */
     void recvMain_();
 
-    void handleReceivingTokenAsTokenGenerator(std::shared_ptr<Token> token);
+    void handleReceivingTokenAsTokenGenerator_(std::shared_ptr<Token> token);
 
-    void handleReceivingTokenAsTokenReceiver(std::shared_ptr<Token> token);
+    void handleReceivingTokenAsTokenReceiver_(std::shared_ptr<Token> token);
 
-    StatusCode communicateByKeys_(const std::set<std::pair<std::string, std::string>> &keys);
+    StatusCode communicateById_(const std::set<RequestIdentifier> &idSet);
 
-    static std::set<std::pair<std::string, std::string>>
-    getKeysFromToken(const Token &token);
+    static std::set<RequestIdentifier> getIdSetFromToken_(const Token &token);
 
     static std::string stageName_(Stage stage);
 };

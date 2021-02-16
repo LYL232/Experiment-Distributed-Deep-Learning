@@ -41,11 +41,11 @@ MPIRingTokenCommunication::communicationSendTokenTo(int receiver, const std::sha
     MPI_Pack(&stringSize, sizeof(size_t), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset, MPI_COMM_WORLD);
     MPI_Send(
             sendBuffer_, offset, MPI_PACKED, receiver,
-            MPI_TAG_RTA_META, MPI_COMM_WORLD
+            MPIBackend::MPI_TAG_RTA_META, MPI_COMM_WORLD
     );
     MPI_Send(
             token->msg().c_str(), (int) stringSize, MPI_CHAR, receiver,
-            MPI_TAG_RTA_MSG, MPI_COMM_WORLD
+            MPIBackend::MPI_TAG_RTA_MSG, MPI_COMM_WORLD
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sent Token")
@@ -67,7 +67,7 @@ std::shared_ptr<Token> MPIRingTokenCommunication::communicationReceiveTokenFrom(
     checkRecvBuffer_(tokenMetaSize_);
     MPI_Recv(
             recvBuffer_, tokenMetaSize_, MPI_PACKED, senderRank,
-            MPI_TAG_RTA_META,
+            MPIBackend::MPI_TAG_RTA_META,
             MPI_COMM_WORLD, &statusBuffer_
     );
 
@@ -81,7 +81,7 @@ std::shared_ptr<Token> MPIRingTokenCommunication::communicationReceiveTokenFrom(
 
     MPI_Recv(
             recvBuffer_, stringSize, MPI_PACKED, senderRank,
-            MPI_TAG_RTA_MSG,
+            MPIBackend::MPI_TAG_RTA_MSG,
             MPI_COMM_WORLD, &statusBuffer_
     );
     // todo: 检查status_, 出错则做相应处理

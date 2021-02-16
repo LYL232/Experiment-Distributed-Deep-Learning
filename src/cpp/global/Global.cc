@@ -11,14 +11,17 @@ const std::shared_ptr<GlobalLog> Global::log(globalLogGetter());
 
 Global Global::instance_(
         communicationBackendGetter(),
-        collectiveCommunicateControllerGetter()
+        collectiveCommunicateControllerGetter(),
+        end2EndCommunicateControllerGetter()
 );
 
 Global::Global(
         std::shared_ptr<CommunicationBackend> communicationBackend,
-        std::shared_ptr<TensorsCollectiveCommunicateController> collectiveCommunicateController
+        std::shared_ptr<TensorsCollectiveCommunicateController> collectiveController,
+        std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController
 ) : communicationBackend_(communicationBackend),
-    collectiveCommunicateController_(collectiveCommunicateController) {}
+    collectiveCommunicateController_(collectiveController),
+    end2EndCommunicateController_(end2EndController) {}
 
 
 int Global::processes() const noexcept {
@@ -31,6 +34,10 @@ int Global::processRank() const noexcept {
 
 TensorsCollectiveCommunicateController &Global::collectiveCommunicateController() const noexcept {
     return *collectiveCommunicateController_;
+}
+
+TensorEnd2EndCommunicateController &Global::end2EndCommunicateController() const noexcept {
+    return *end2EndCommunicateController_;
 }
 
 CommunicationBackend &Global::communicationBackend() const noexcept {

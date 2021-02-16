@@ -9,14 +9,18 @@
 #include "mpi.h"
 #include "communicate/backend/CommunicationBackend.h"
 
-#define MPI_USED_TAG_COUNTER 0
-
 namespace lyl232 { namespace experiment { namespace ddl {
 
 class MPIBackend : public CommunicationBackend {
     friend class Global;
 
 public:
+    enum MPICommunicateTag : int {
+        MPI_TAG_RTA_META,
+        MPI_TAG_RTA_MSG,
+        MPI_TAG_BCC_COMMUNICATE,
+    };
+
     MPIBackend(int *argc = nullptr, char ***argv = nullptr);
 
     MPIBackend(const MPIBackend &) = delete;

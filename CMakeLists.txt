@@ -12,8 +12,10 @@ list(APPEND SOURCES
         "${PROJECT_SOURCE_DIR}/src/cpp/c_api.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/op/AllreduceOp.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/op/BroadcastOp.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/op/EndToEndOp.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/backend/CommunicationBackend.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/backend/mpi/MPIBackend.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/TensorCommunicateRequest.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/TensorsCollectiveCommunicateController.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/rtc/RingTokenCommunicateController.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/controller/rtc/Token.cc"
@@ -22,6 +24,11 @@ list(APPEND SOURCES
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/TensorCollectiveCommunicateRequest.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/broadcast/TensorBroadcastRequest.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/collective/allreduce/TensorAllreduceRequest.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/TensorEnd2EndCommunicateRequest.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/TensorEnd2EndCommunicateController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/bcc/BlockedEnd2EndCommunicateController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/bcc/BlockedEnd2EndCommunication.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/bcc/mpi/MPIBlockedEnd2EndCommunication.cc"
         )
 
 # PYTHON

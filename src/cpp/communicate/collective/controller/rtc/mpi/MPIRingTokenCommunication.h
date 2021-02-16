@@ -16,22 +16,17 @@ namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 
 class MPIRingTokenCommunication : public RingTokenCommunication {
 public:
-    // 为了统计所有mpi tag的使用情况, 只能出此下策
-#ifndef MPI_USED_TAG_COUNTER
-#define MPI_USED_TAG_COUNTER 0
-#endif
     enum MPICommunicateTag : int {
-        MPI_TAG_RTA_META = MPI_USED_TAG_COUNTER,
-        MPI_TAG_RTA_MSG = MPI_USED_TAG_COUNTER + 1,
+
     };
-#define MPI_USED_TAG_COUNTER_TEMP MPI_USED_TAG_COUNTER + 2
-#undef MPI_USED_TAG_COUNTER
-#define MPI_USED_TAG_COUNTER MPI_USED_TAG_COUNTER_TEMP
-#undef MPI_USED_TAG_COUNTER_TEMP
 
     typedef std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>> Requests;
 
     MPIRingTokenCommunication(std::shared_ptr<MPIBackend> backend) noexcept;
+
+    MPIRingTokenCommunication(const MPIRingTokenCommunication &) = delete;
+
+    MPIRingTokenCommunication(MPIRingTokenCommunication &&) = delete;
 
     virtual void communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const override;
 

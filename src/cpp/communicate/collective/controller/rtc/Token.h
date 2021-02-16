@@ -2,10 +2,10 @@
 // Created by LYL232 on 2021/2/13.
 //
 
-#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TOKEN_H
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TOKEN_H
+#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RTC_TOKEN_H
+#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RTC_TOKEN_H
 
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_TOKEN_DESC_SHOW_MSG 0
+#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_TOKEN_DESC_SHOW_MSG 0
 
 #include <string>
 #include <map>
@@ -28,37 +28,37 @@ public:
         TOKEN_REQUEST_UNKNOWN
     };
 
-    Token(Type type, RequestType requestType, const std::string &msg);
+    Token(Type type, RequestType requestType, const std::string &msg) noexcept;
 
-    Token(Type type, RequestType requestType, std::string &&msg);
+    Token(Type type, RequestType requestType, std::string &&msg) noexcept;
 
     Token(const Token &) = delete;
 
-    Token(Token &&other);
+    Token(Token &&other) noexcept;
 
-    Type type() const;
+    Type type() const noexcept;
 
-    RequestType requestType() const;
+    RequestType requestType() const noexcept;
 
-    const char *requestTypeName() const;
+    const char *requestTypeName() const noexcept;
 
-    const std::string msg() const;
+    const std::string &msg() const noexcept;
 
-    std::string &&movingMsg();
+    std::string &&movingMsg() noexcept;
 
-    const std::string &desc() const;
+    const std::string &desc() const noexcept;
 
     /**
      * 判断token是否是停机Token
      * @param token
      * @return bool
      */
-    bool isShutDown() { return type_ == TOKEN_TYPE_SHUT_DOWN; }
+    bool isShutDown() const noexcept { return type_ == TOKEN_TYPE_SHUT_DOWN; }
 
 
-    static RequestType requestType(const std::string &requestTypeName);
+    static RequestType requestType(const std::string &requestTypeName) noexcept;
 
-    static const char *requestTypeName(RequestType type);
+    static const char *requestTypeName(RequestType type) noexcept;
 
 private:
     Type type_;
@@ -73,4 +73,4 @@ private:
 }}}}
 
 
-#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TOKEN_H
+#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RTC_TOKEN_H

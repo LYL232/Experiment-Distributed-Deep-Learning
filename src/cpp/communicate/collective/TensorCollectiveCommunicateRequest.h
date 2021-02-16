@@ -5,10 +5,8 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOLLECTIVECOMMUNICATEREQUEST_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORCOLLECTIVECOMMUNICATEREQUEST_H
 
-#include <memory>
 #include <vector>
-#include "tensorflow/core/framework/tensor.h"
-#include "def.h"
+#include "communicate/TensorCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -18,7 +16,7 @@ class TensorsCollectiveCommunicateController;
  * OP要求对Tensor进行组通信时的请求类, 提供一系列访问请求Tensor和结果Tensor的方法, 还有维护计算完毕时
  * 回调的异步方法
  */
-class TensorCollectiveCommunicateRequest {
+class TensorCollectiveCommunicateRequest: public TensorCommunicateRequest {
 public:
     typedef std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>> Requests;
 
@@ -42,24 +40,6 @@ public:
 
     TensorCollectiveCommunicateRequest(TensorCollectiveCommunicateRequest &&) noexcept;
 
-    const std::string &key() const noexcept;
-
-    size_t tensorSize() const noexcept;
-
-    size_t elements() const noexcept;
-
-    tensorflow::DataType dtype() const noexcept;
-
-    std::shared_ptr<tensorflow::Tensor> &requestingTensor() const noexcept;
-
-    std::shared_ptr<tensorflow::Tensor> &resultTensor() const noexcept;
-
-    void done(StatusCode code) const noexcept;
-
-    void *requestingTensorData() const noexcept;
-
-    void *resultTensorData() const noexcept;
-
     virtual StatusCode doCollectiveCommunication(const Requests &requests);
 
     virtual const char *requestTypeName() const;
@@ -67,16 +47,6 @@ public:
     virtual ~TensorCollectiveCommunicateRequest() {};
 protected:
     TensorsCollectiveCommunicateController &controller_;
-private:
-    std::string key_;
-    mutable std::shared_ptr<tensorflow::Tensor> requestingTensor_, resultTensor_;
-    std::function<void(StatusCode)> done_;
-
-
-    static void checkTensorSize_(
-            const std::shared_ptr<tensorflow::Tensor> &requestingTensor,
-            const std::shared_ptr<tensorflow::Tensor> &resultTensor
-    );
 };
 
 }}}

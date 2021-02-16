@@ -22,7 +22,7 @@ std::map<std::string, Token::RequestType> Token::requestNameMap_(
         (sizeof(requestNameMapInitilizer_) / sizeof(requestNameMapInitilizer_[0]))
 );
 
-const std::string &Token::desc() const {
+const std::string &Token::desc() const noexcept {
     using namespace std;
     if (desc_.length() == 0) {
         desc_.append("{type: ");
@@ -55,7 +55,7 @@ const std::string &Token::desc() const {
                 desc_.append("TOKEN_REQUEST_UNKNOWN");
                 break;
         }
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_ALLREDUCE_TOKEN_DESC_SHOW_MSG
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_TOKEN_DESC_SHOW_MSG
         desc_.append(", msg: ");
         if (msg_.find("\n") != string::npos) {
             desc_.append("\n");
@@ -67,37 +67,37 @@ const std::string &Token::desc() const {
     return desc_;
 }
 
-Token::Token(Token::Type type, Token::RequestType requestType, const std::string &msg) :
-        type_(type), requestType_(requestType), msg_(msg) {}
+Token::Token(Token::Type type, Token::RequestType requestType, const std::string &msg)
+noexcept: type_(type), requestType_(requestType), msg_(msg) {}
 
-Token::Token(Token::Type type, Token::RequestType requestType, std::string &&msg) :
-        type_(type), requestType_(requestType), msg_(std::move(msg)) {}
+Token::Token(Token::Type type, Token::RequestType requestType, std::string &&msg)
+noexcept: type_(type), requestType_(requestType), msg_(std::move(msg)) {}
 
-Token::Token(Token &&other) :
+Token::Token(Token &&other) noexcept:
         type_(other.type_), requestType_(other.requestType_),
         msg_(std::move(other.msg_)) {}
 
-Token::Type Token::type() const {
+Token::Type Token::type() const noexcept {
     return type_;
 }
 
-Token::RequestType Token::requestType() const {
+Token::RequestType Token::requestType() const noexcept {
     return requestType_;
 }
 
-const std::string Token::msg() const {
+const std::string &Token::msg() const noexcept {
     return msg_;
 }
 
-std::string &&Token::movingMsg() {
+std::string &&Token::movingMsg() noexcept {
     return std::move(msg_);
 }
 
-const char *Token::requestTypeName() const {
+const char *Token::requestTypeName() const noexcept {
     return requestTypeName(requestType_);
 }
 
-Token::RequestType Token::requestType(const std::string &requestTypeName) {
+Token::RequestType Token::requestType(const std::string &requestTypeName) noexcept {
     auto iter = requestNameMap_.find(requestTypeName);
     if (iter == requestNameMap_.end()) {
         return TOKEN_REQUEST_UNKNOWN;
@@ -105,7 +105,7 @@ Token::RequestType Token::requestType(const std::string &requestTypeName) {
     return iter->second;
 }
 
-const char *Token::requestTypeName(Token::RequestType type) {
+const char *Token::requestTypeName(Token::RequestType type) noexcept {
     switch (type) {
         case TOKEN_REQUEST_SHUTDOWN:
             return shutdownTypeName_;

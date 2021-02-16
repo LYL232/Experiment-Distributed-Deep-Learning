@@ -15,6 +15,7 @@ namespace lyl232 { namespace experiment { namespace ddl {
 class CommunicationBackend;
 
 class TensorsCollectiveCommunicateController;
+class TensorEnd2EndCommunicateController;
 
 /**
  * 单例模式: 全局对象类
@@ -35,6 +36,8 @@ public:
 
     TensorsCollectiveCommunicateController &collectiveCommunicateController() const noexcept;
 
+    TensorEnd2EndCommunicateController &end2EndCommunicateController() const noexcept;
+
     ~Global();
 
     static Global &get() noexcept;
@@ -44,12 +47,15 @@ public:
 private:
     Global(
             std::shared_ptr<CommunicationBackend> communicationBackend,
-            std::shared_ptr<TensorsCollectiveCommunicateController> controller
+            std::shared_ptr<TensorsCollectiveCommunicateController> collectiveController,
+            std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController
     );
 
     mutable std::shared_ptr<CommunicationBackend> communicationBackend_;
     mutable std::shared_ptr<TensorsCollectiveCommunicateController>
             collectiveCommunicateController_;
+    mutable std::shared_ptr<TensorEnd2EndCommunicateController>
+            end2EndCommunicateController_;
 
     static Global instance_;
 };

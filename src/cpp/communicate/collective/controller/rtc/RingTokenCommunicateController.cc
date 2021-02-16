@@ -25,7 +25,7 @@ RingTokenCommunicateController::RingTokenCommunicateController(
         sendThread_(&RingTokenCommunicateController::sendMain_, this),
         recvThread_(&RingTokenCommunicateController::recvMain_, this),
         outputtingTokenQueue_(),
-        waitingReadyTokenKey_(),
+        waitingReadyTokenId_(),
         registeredRequest_(), communicationImplement_(communicationImplement) {
     while (!initialized()) {
         std::this_thread::sleep_for(std::chrono::microseconds(10));
@@ -33,7 +33,7 @@ RingTokenCommunicateController::RingTokenCommunicateController(
 }
 
 RingTokenCommunicateController::~RingTokenCommunicateController() {
-    fillTokenSendBufferAndNotify(std::make_shared<Token>(
+    fillTokenSendBufferAndNotify_(std::make_shared<Token>(
             Token::TOKEN_TYPE_SHUT_DOWN,
             Token::TOKEN_REQUEST_SHUTDOWN,
             "shut down"
@@ -64,7 +64,7 @@ void RingTokenCommunicateController::sendMain_() {
             pthread_cond_wait(&outputTokenCond_, &outMutex_);
         }
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_THREAD_MANNER
-        GLOBAL_INFO_WITH_THREAD_ID("send thread woke up")
+        GLOBAL_INFO_WITH_THREAD_ID("RingTokenCommunicateController send thread woke up")
 #endif
         queue<shared_ptr<Token>> sendingTokens;
         while (!outputtingTokenQueue_.empty()) {
@@ -92,7 +92,7 @@ void RingTokenCommunicateController::sendMain_() {
         }
     }
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_THREAD_MANNER
-    GLOBAL_INFO_WITH_THREAD_ID("send thread exit")
+    GLOBAL_INFO_WITH_THREAD_ID("RingTokenCommunicateController send thread exit")
 #endif
 }
 
@@ -113,18 +113,17 @@ void RingTokenCommunicateController::recvMain_() {
             break;
         }
         if (rank == 0) {
-            handleReceivingTokenAsTokenGenerator(token);
+            handleReceivingTokenAsTokenGenerator_(token);
         } else {
-            handleReceivingTokenAsTokenReceiver(token);
+            handleReceivingTokenAsTokenReceiver_(token);
         }
     }
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_THREAD_MANNER
-    GLOBAL_INFO_WITH_THREAD_ID("receive thread exit")
+    GLOBAL_INFO_WITH_THREAD_ID("RingTokenCommunicateController receive thread exit")
 #endif
 }
 
-
-void RingTokenCommunicateController::handleReceivingTokenAsTokenGenerator(std::shared_ptr<Token> token) {
+void RingTokenCommunicateController::handleReceivingTokenAsTokenGenerator_(std::shared_ptr<Token> token) {
     using namespace std;
 
     switch (token->type()) {
@@ -153,7 +152,7 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenGenerator(std::s
                     "forward token: " << token->desc()
                                       << " to stage RTCC_RECV_SYNC_TOKEN")
 #endif
-            fillTokenSendBufferAndNotify(token);
+            fillTokenSendBufferAndNotify_(token);
             break;
         }
         case Token::TOKEN_TYPE_SYNC: {
@@ -170,14 +169,14 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenGenerator(std::s
                     "forward token: " << token->desc()
                                       << " to stage RTCC_RECV_ALLREDUCE_TOKEN")
 #endif
-            fillTokenSendBufferAndNotify(token);
+            fillTokenSendBufferAndNotify_(token);
             break;
         }
         case Token::TOKEN_TYPE_COMMUNICATE: {
             assert(inStage_(RTCC_WAITING_COMMUNICATE_TOKEN));
 
             fromStageToStage_(RTCC_WAITING_COMMUNICATE_TOKEN, RTCC_COMMUNICATING);
-            communicateByKeys_(getKeysFromToken(*token));
+            communicateById_(getIdSetFromToken_(*token));
             pthread_rwlock_rdlock(&registerLock_);
             if (!registeredRequest_.empty()) {
                 token = make_shared<Token>(
@@ -192,7 +191,7 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenGenerator(std::s
                         "forward token: " << token->desc()
                                           << " to stage RTCC_RECV_READY_TOKEN")
 #endif
-                fillTokenSendBufferAndNotify(token);
+                fillTokenSendBufferAndNotify_(token);
             } else {
                 fromStageToStage_(RTCC_COMMUNICATING, RTCC_WAITING_TENSORS);
                 pthread_rwlock_unlock(&registerLock_);
@@ -212,7 +211,7 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenGenerator(std::s
     }
 }
 
-void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::shared_ptr<Token> token) {
+void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver_(std::shared_ptr<Token> token) {
     using namespace std;
 
     switch (token->type()) {
@@ -228,10 +227,10 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::sh
                         "forward token: " << token->desc()
                                           << " to stage RTCC_RECV_SYNC_TOKEN")
 #endif
-                fillTokenSendBufferAndNotify(token);
+                fillTokenSendBufferAndNotify_(token);
                 fromStageToStage_(RTCC_WAITING_READY_TOKEN, RTCC_WAITING_SYNC_TOKEN);
             } else {
-                waitingReadyTokenKey_ = make_pair(token->requestTypeName(), token->msg());
+                waitingReadyTokenId_ = make_pair(token->requestTypeName(), token->msg());
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TOKEN
                 GLOBAL_INFO_WITH_THREAD_ID(
                         "forward token: " << token->desc()
@@ -245,11 +244,11 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::sh
         case Token::TOKEN_TYPE_SYNC: {
             assert(inStage_(RTCC_WAITING_SYNC_TOKEN));
 
-            auto keys = getKeysFromToken(*token);
-            set<pair<string, string>> notReady;
+            auto idSet = getIdSetFromToken_(*token);
+            set<RequestIdentifier> notReady;
 
             pthread_rwlock_rdlock(&registerLock_);
-            for (auto iter = keys.begin(); iter != keys.end(); ++iter) {
+            for (auto iter = idSet.begin(); iter != idSet.end(); ++iter) {
                 if (registeredRequest_.find(*iter) == registeredRequest_.end()) {
                     notReady.emplace(*iter);
                 }
@@ -261,7 +260,7 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::sh
                 string notReadyNames("{\n");
 #endif
                 for (auto iter = notReady.begin(); iter != notReady.end(); ++iter) {
-                    keys.erase(*iter);
+                    idSet.erase(*iter);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TOKEN
                     notReadyNames.append("\t").append(iter->first)
                             .append(":").append(iter->second).append("\n");
@@ -274,7 +273,7 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::sh
                                 << notReadyNames << " filter them")
 #endif
                 string allReadyKeys;
-                for (auto iter = keys.begin(); iter != keys.end(); ++iter) {
+                for (auto iter = idSet.begin(); iter != idSet.end(); ++iter) {
                     allReadyKeys.append(iter->first).append(tokenKeySplitDelimiter_)
                             .append(iter->second).append(tokenSplitDelimiter_);
                 }
@@ -289,7 +288,7 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::sh
                     "forward token: " << token->desc()
                                       << " to stage RTCC_RECV_SYNC_TOKEN";)
 #endif
-            fillTokenSendBufferAndNotify(token);
+            fillTokenSendBufferAndNotify_(token);
             fromStageToStage_(RTCC_WAITING_SYNC_TOKEN, RTCC_WAITING_COMMUNICATE_TOKEN);
             break;
         }
@@ -297,9 +296,8 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::sh
             assert(inStage_(RTCC_WAITING_COMMUNICATE_TOKEN));
 
             fromStageToStage_(RTCC_WAITING_COMMUNICATE_TOKEN, RTCC_COMMUNICATING);
-            auto names = getKeysFromToken(*token);
-            fillTokenSendBufferAndNotify(token);
-            communicateByKeys_(names);
+            fillTokenSendBufferAndNotify_(token);
+            communicateById_(getIdSetFromToken_(*token));
             fromStageToStage_(RTCC_COMMUNICATING, RTCC_WAITING_READY_TOKEN);
             break;
         }
@@ -312,7 +310,7 @@ void RingTokenCommunicateController::handleReceivingTokenAsTokenReceiver(std::sh
     }
 }
 
-void RingTokenCommunicateController::fillTokenSendBufferAndNotify(std::shared_ptr<Token> token) {
+void RingTokenCommunicateController::fillTokenSendBufferAndNotify_(std::shared_ptr<Token> token) {
     pthread_mutex_lock(&outMutex_);
     outputtingTokenQueue_.emplace(token);
     pthread_cond_signal(&outputTokenCond_);
@@ -325,48 +323,48 @@ StatusCode RingTokenCommunicateController::handleRequest(
     using namespace std;
     assert(!inStage_(RTCC_INIT));
     pthread_rwlock_wrlock(&registerLock_);
-    pair<string, string> key = make_pair(request->requestTypeName(), request->key());
-    assert(registeredRequest_.find(key) == registeredRequest_.end());
-    registeredRequest_.emplace(key, request);
+    RequestIdentifier id = make_pair(request->requestTypeName(), request->key());
+    assert(registeredRequest_.find(id) == registeredRequest_.end());
+    registeredRequest_.emplace(id, request);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TF_OP_INTERACTION
     GLOBAL_INFO_WITH_THREAD_ID(
-            "op request to " << request->requestTypeName() << " tensor: " << key.second)
+            "op request to " << request->requestTypeName() << " tensor: " << id.second)
 #endif
     if (backend_->processRank() == 0) {
         if (inStage_(RTCC_WAITING_TENSORS)) {
             fromStageToStage_(RTCC_WAITING_TENSORS, RTCC_WAITING_READY_TOKEN);
-            fillTokenSendBufferAndNotify(make_shared<Token>(
+            fillTokenSendBufferAndNotify_(make_shared<Token>(
                     Token::TOKEN_TYPE_READY,
-                    Token::requestType(key.first),
-                    key.second
+                    Token::requestType(id.first),
+                    id.second
             ));
         }
     } else {
-        if (key == waitingReadyTokenKey_) {
+        if (id == waitingReadyTokenId_) {
             fromStageToStage_(RTCC_WAITING_TENSORS, RTCC_WAITING_SYNC_TOKEN);
-            fillTokenSendBufferAndNotify(make_shared<Token>(
+            fillTokenSendBufferAndNotify_(make_shared<Token>(
                     Token::TOKEN_TYPE_READY,
-                    Token::requestType(key.first),
-                    key.second
+                    Token::requestType(id.first),
+                    id.second
             ));
-            waitingReadyTokenKey_ = make_pair("", "");
+            waitingReadyTokenId_ = make_pair("", "");
         }
     }
     pthread_rwlock_unlock(&registerLock_);
     return STATUS_OK;
 }
 
-StatusCode RingTokenCommunicateController::communicateByKeys_(
-        const std::set<std::pair<std::string, std::string>> &keys) {
+StatusCode RingTokenCommunicateController::communicateById_(
+        const std::set<RequestIdentifier> &idSet) {
     using namespace std;
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_COMMUNICATE
     string communicatingTensorsDesc = "(\n";
 #endif
     pthread_rwlock_wrlock(&registerLock_);
     vector<shared_ptr<TensorCollectiveCommunicateRequest>> requests;
-    for (auto i = keys.begin(); i != keys.end(); ++i) {
-        const auto &key = *i;
-        auto iter = registeredRequest_.find(key);
+    for (auto i = idSet.begin(); i != idSet.end(); ++i) {
+        const auto &id = *i;
+        auto iter = registeredRequest_.find(id);
 
         if (iter == registeredRequest_.end()) {
             string r = "registered Tensors: {\n";
@@ -375,7 +373,7 @@ StatusCode RingTokenCommunicateController::communicateByKeys_(
                         .append(_iter->first.second).append("\n");
             }
             string n = "{\n";
-            for (auto _iter = keys.begin(); _iter != keys.end(); ++_iter) {
+            for (auto _iter = idSet.begin(); _iter != idSet.end(); ++_iter) {
                 n.append("\t").append(_iter->first).append(":")
                         .append(_iter->second).append("\n");
             }
@@ -385,9 +383,9 @@ StatusCode RingTokenCommunicateController::communicateByKeys_(
         }
         assert(iter != registeredRequest_.end());
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_COMMUNICATE
-        communicatingTensorsDesc.append("\t").append(key.first)
+        communicatingTensorsDesc.append("\t").append(id.first)
                 .append(tokenKeySplitDelimiter_)
-                .append(key.second).append(", \n");
+                .append(id.second).append(", \n");
 #endif
         requests.emplace_back(iter->second);
         registeredRequest_.erase(iter);
@@ -403,11 +401,10 @@ StatusCode RingTokenCommunicateController::communicateByKeys_(
     return requests.front()->doCollectiveCommunication(requests);
 }
 
-std::set<std::pair<std::string, std::string>>
-RingTokenCommunicateController::getKeysFromToken(const Token &token) {
+std::set<RingTokenCommunicateController::RequestIdentifier>
+RingTokenCommunicateController::getIdSetFromToken_(const Token &token) {
     using namespace std;
-    set<pair<string, string>>
-            res;
+    set<RequestIdentifier> res;
     const string &str = token.msg();
     if ("" == str) {
         return res;
@@ -431,9 +428,7 @@ RingTokenCommunicateController::getKeysFromToken(const Token &token) {
     return res;
 }
 
-void RingTokenCommunicateController::fromStageToStage_(
-        RingTokenCommunicateController::Stage from,
-        RingTokenCommunicateController::Stage to) {
+void RingTokenCommunicateController::fromStageToStage_(Stage from, Stage to) {
     pthread_rwlock_wrlock(&stageLock_);
     if (currentStage_ == from) {
         currentStage_ = to;
@@ -461,13 +456,13 @@ StatusCode RingTokenCommunicateController::broadcast(const Requests &requests) {
     return communicationImplement_->broadcastRequests(requests);
 }
 
-void RingTokenCommunicateController::forceToStage_(RingTokenCommunicateController::Stage to) {
+void RingTokenCommunicateController::forceToStage_(Stage to) {
     pthread_rwlock_wrlock(&stageLock_);
     currentStage_ = to;
     pthread_rwlock_unlock(&stageLock_);
 }
 
-std::string RingTokenCommunicateController::stageName_(RingTokenCommunicateController::Stage stage) {
+std::string RingTokenCommunicateController::stageName_(Stage stage) {
     switch (stage) {
         case RTCC_INIT:
             return "RTCC_INIT";

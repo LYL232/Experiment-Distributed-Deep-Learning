@@ -18,11 +18,17 @@ public:
 
     TensorsCollectiveCommunicateController(std::shared_ptr<CommunicationBackend> backend);
 
+    TensorsCollectiveCommunicateController(const TensorsCollectiveCommunicateController &) = delete;
+
+    TensorsCollectiveCommunicateController(TensorsCollectiveCommunicateController &&) = delete;
+
     virtual StatusCode handleRequest(std::shared_ptr<TensorCollectiveCommunicateRequest>);
 
     virtual StatusCode allreduce(const Requests &requests);
 
     virtual StatusCode broadcast(const Requests &requests);
+
+    virtual ~TensorsCollectiveCommunicateController() {};
 
 protected:
     std::shared_ptr<CommunicationBackend> backend_;
