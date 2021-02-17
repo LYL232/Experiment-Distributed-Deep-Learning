@@ -10,12 +10,18 @@ batch_size = 200
 
 samples = 60000
 
+lr = 0.001
+
+epochs = 24
+
 GET_FORWARD_PROPAGATION = 0
 FORWARD_PROPAGATION_RESULT = 1
 GRADIENTS_BACK_PROPAGATION = 2
 DONE = 3
 
 verbose = 0
+
+test_correct_loss = True
 
 
 def log(msg: str):
@@ -70,18 +76,32 @@ class FirstStageProcess(Process):
             tf.keras.layers.Dense(196, activation='relu'),
         ])
 
-        def intermediate_loss(diff, output_tensor):
-            return tf.reduce_sum(tf.multiply(output_tensor, diff), axis=None)
+        def correct_intermediate_loss(diff, output):
+            return tf.reduce_mean(
+                tf.multiply(diff, output),
+                axis=None
+            )
+
+        def wrong_intermediate_loss(diff, output):
+            return tf.reduce_mean(
+                tf.multiply(
+                    tf.reduce_mean(diff, axis=0),
+                    tf.reduce_mean(output, axis=0)),
+                axis=None
+            )
 
         (self.__data, self.__label), _ = tf.keras.datasets.mnist.load_data(
             path='mnist.npz')
 
         self.__data = self.__data / 255.0
 
+        loss = correct_intermediate_loss if test_correct_loss else \
+                   wrong_intermediate_loss,
+
         self.__model.compile(
-            loss=intermediate_loss,
-            optimizer=tf.optimizers.Adam(0.001),
-            metrics=[intermediate_loss],
+            loss=loss,
+            optimizer=tf.optimizers.Adam(lr),
+            metrics=[loss],
             experimental_run_tf_function=False
         )
         log('first stage model:')
@@ -93,11 +113,6 @@ class FirstStageProcess(Process):
         inputs = self.__model.predict(inputs)
         labels = self.__label[begin:end, ...]
         log('FirstStage: sending forward propagation result')
-
-        # print('last_activation:')
-        # print(inputs)
-        # print('labels:')
-        # print(labels)
 
         self.__pipe.send(
             (FORWARD_PROPAGATION_RESULT, inputs, labels)
@@ -117,7 +132,15 @@ class FirstStageProcess(Process):
             assert msg[0] == GRADIENTS_BACK_PROPAGATION
             assert isinstance(msg[1], np.ndarray)
             assert self.__last_forward_propagation_inputs is not None
-            diff = msg[1]
+            if test_correct_loss:
+                diff = msg[1].T
+            else:
+                # 将diff按照输入的样例个数(input.shape[0])复制到维度0, 因为
+                # keras的fit会检查输入和输出的shape[0]是否一致
+                diff = np.expand_dims(msg[1], 0).repeat(
+                    self.__last_forward_propagation_inputs.shape[0],
+                    0
+                )
             self.__model.fit(
                 self.__last_forward_propagation_inputs, diff,
                 batch_size=batch_size,
@@ -137,9 +160,9 @@ class SecondStageProcess(Process):
         super().__init__()
         self.__pipe = pipe
         self.__model = None
-        self.__last_activation = None
         self.__pipe_cond = None
         self.__status = self.STATUS_INIT
+        self.__first_layer_biased_gradients = None
 
     def run(self) -> None:
         log('SecondStage: started, initializing')
@@ -148,7 +171,7 @@ class SecondStageProcess(Process):
         self.__model.fit(
             self.__second_stage_data_generator(),
             steps_per_epoch=samples // batch_size,
-            epochs=1, verbose=1
+            epochs=epochs, verbose=1
         )
 
         self.__pipe_cond.acquire()
@@ -179,37 +202,28 @@ class SecondStageProcess(Process):
 
         self.__model = tf.keras.Sequential([
             tf.keras.layers.Flatten(input_shape=(196,)),
-            tf.keras.layers.Dense(128, activation='relu', name='need_weights'),
-            tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dense(10, activation='softmax')
+            tf.keras.layers.Dense(128, activation='relu', name='dense-0'),
+            tf.keras.layers.Dense(256, activation='relu', name='dense-1'),
+            tf.keras.layers.Dense(10, activation='softmax', name='dense-2')
         ])
 
         def pipeline_gradients_back_propagation(gradients):
-            assert self.__last_activation is not None
-            assert isinstance(self.__last_activation, np.ndarray)
-            weights = self.__model.get_layer('need_weights').get_weights()[0]
-            diff = tf.keras.backend.dot(
-                tf.constant(self.__last_activation),
-                tf.constant(gradients[0])
-            )
-            diff = tf.keras.backend.dot(
-                diff, tf.transpose(tf.constant(weights))
-            ).numpy()
 
+            if test_correct_loss:
+                # 在loss函数手动对每个样例计算得到的梯度, shape[0]=输入的样例个数
+                biased_gradients = self.__first_layer_biased_gradients
+            else:
+                # 优化器传过来的梯度为该batch所有样例产生的梯度平均之后的梯度
+                biased_gradients = gradients[1]
+            weights = self.__model.get_layer('dense-0').get_weights()[0]
+            diff = tf.matmul(
+                tf.constant(weights),
+                tf.transpose(biased_gradients) if test_correct_loss else
+                tf.expand_dims(biased_gradients, axis=1)
+            ).numpy()
             log(
                 'SecondStage: sending back propagation gradients to FirstStage'
             )
-
-            # print('self.__last_activation:')
-            # print(self.__last_activation)
-            # print('gradients:')
-            # print(gradients[0])
-            # print('weights:')
-            # print(weights)
-            # print('diff:')
-            # print(diff)
-            # exit(0)
-            self.__last_activation = None
 
             self.__pipe_cond.acquire()
             while self.__status != self.STATUS_GOT_FWD:
@@ -224,10 +238,56 @@ class SecondStageProcess(Process):
             self.__pipe_cond.notify_all()
             self.__pipe_cond.release()
 
+        opt = tf.optimizers.Adam(lr)
+
+        def loss(target, output):
+            from tensorflow.keras.losses import sparse_categorical_crossentropy
+            if not test_correct_loss:
+                return tf.reduce_mean(
+                    sparse_categorical_crossentropy(target, output), axis=None
+                )
+
+            from tensorflow.keras.backend import relu, softmax
+
+            inputs = self.__last_inputs
+
+            weights0 = self.__model.get_layer('dense-0').weights
+            weights1 = self.__model.get_layer('dense-1').weights
+            weights2 = self.__model.get_layer('dense-2').weights
+
+            first_layer_biased_gradients = []
+
+            for i in range(target.shape[0]):
+                # 暴力计算每个样例对变量的权重, 保存到中
+                # self.__first_layer_biased_gradients
+                var_list = []
+
+                def __loss():
+                    sample = inputs[i, ...].reshape((1, -1))
+                    t = tf.reshape(target[i, ...], (1, -1))
+                    z0 = tf.matmul(sample, weights0[0]) + weights0[1]
+                    a0 = relu(z0)
+                    z1 = tf.matmul(a0, weights1[0]) + weights1[1]
+                    a1 = relu(z1)
+                    z2 = tf.matmul(a1, weights2[0]) + weights2[1]
+                    a2 = softmax(z2)
+                    var_list.append(weights0[1])
+                    return sparse_categorical_crossentropy(t, a2)
+
+                gs = opt._compute_gradients(__loss, var_list)
+                var_list.clear()
+                first_layer_biased_gradients.append(gs[0][0])
+            self.__first_layer_biased_gradients = np.array(
+                first_layer_biased_gradients
+            )
+            return tf.reduce_mean(
+                sparse_categorical_crossentropy(target, output), axis=None
+            )
+
         self.__model.compile(
-            loss=tf.losses.SparseCategoricalCrossentropy(),
+            loss=loss,
             optimizer=pipeline_distributed_optimizer_wrapper(
-                tf.optimizers.Adam(0.001),
+                opt,
                 pipeline_gradients_back_propagation
             ),
             metrics=['accuracy'],
@@ -271,10 +331,10 @@ class SecondStageProcess(Process):
         begin = 0
         while True:
             end = min(begin + batch_size, samples)
-            last_activation, labels = self.__get_forward_propagation(begin, end)
+            inputs, labels = self.__get_forward_propagation(begin, end)
+            self.__last_inputs = inputs
             begin = 0 if end >= samples else begin + batch_size
-            self.__last_activation = last_activation
-            yield last_activation, labels
+            yield inputs, labels
 
 
 def main():
