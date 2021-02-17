@@ -1,4 +1,6 @@
-# keras_pipeline的模型的单机版本, 作为对比
+"""
+keras_pipeline.py的模型的单机版本, 作为对比
+"""
 
 import tensorflow as tf
 
@@ -28,15 +30,13 @@ def main():
         tf.keras.layers.Dense(10, activation='softmax')
     ])
 
-    # 设置`experimental_run_tf_function=False` 让TensorFlow
-    # 使用opt计算梯度
     mnist_model.compile(loss=tf.losses.SparseCategoricalCrossentropy(),
                         optimizer=tf.optimizers.Adam(0.001),
                         metrics=['accuracy'])
 
     mnist_model.fit(
         data_generator(), steps_per_epoch=samples // batch_size,
-        epochs=5, verbose=1
+        epochs=24, verbose=1
     )
 
 
