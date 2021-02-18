@@ -36,7 +36,7 @@ def main():
 
     mnist_model.fit(
         data_generator(), steps_per_epoch=samples // batch_size,
-        epochs=24, verbose=1
+        epochs=5, verbose=1
     )
 
 

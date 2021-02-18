@@ -29,6 +29,10 @@ list(APPEND SOURCES
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/bcc/BlockedEnd2EndCommunicateController.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/bcc/BlockedEnd2EndCommunication.cc"
         "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/bcc/mpi/MPIBlockedEnd2EndCommunication.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/smcc/SimpleMessageEnd2EndCommunicateController.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/smcc/SimpleMessageEnd2EndCommunication.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/smcc/Message.cc"
+        "${PROJECT_SOURCE_DIR}/src/cpp/communicate/end2end/controller/smcc/mpi/MPISimpleMessageEnd2EndCommunication.cc"
         )
 
 # PYTHON

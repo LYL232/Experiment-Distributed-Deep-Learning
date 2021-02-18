@@ -12,6 +12,7 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class TensorEnd2EndCommunicateController {
 public:
+    typedef std::shared_ptr<TensorEnd2EndCommunicateRequest> SharedRequest;
 
     TensorEnd2EndCommunicateController(std::shared_ptr<CommunicationBackend> backend);
 
@@ -19,7 +20,7 @@ public:
 
     TensorEnd2EndCommunicateController(TensorEnd2EndCommunicateController &&) = delete;
 
-    virtual StatusCode handleRequest(std::shared_ptr<TensorEnd2EndCommunicateRequest> request);
+    virtual StatusCode handleRequest(SharedRequest request);
 
     virtual StatusCode sendOrRecv(const TensorEnd2EndCommunicateRequest &request);
 

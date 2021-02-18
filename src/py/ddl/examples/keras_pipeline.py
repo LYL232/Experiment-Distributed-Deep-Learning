@@ -26,7 +26,7 @@ samples = 60000
 
 lr = 0.001
 
-epochs = 24
+epochs = 5
 
 # Pipe发送的消息类型枚举定义
 # SecondStage请求FirstStage取出数据计算前向传播, 并等待其传输结果
