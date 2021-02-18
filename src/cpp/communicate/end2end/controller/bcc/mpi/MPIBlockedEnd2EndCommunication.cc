@@ -12,10 +12,12 @@ double MPIBlockedEnd2EndCommunication::inflateFactor_ = 1.5;
 
 MPIBlockedEnd2EndCommunication::MPIBlockedEnd2EndCommunication(
         std::shared_ptr<MPIBackend> backend) :
-        buffer_(nullptr), bufferSize_(0), backend_(backend), statusBuffer_() {}
+        buffer_(nullptr), bufferSize_(0), backend_(backend), statusBuffer_(),
+        mutex_(PTHREAD_MUTEX_INITIALIZER) {}
 
 StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
         const TensorEnd2EndCommunicateRequest &request) const {
+    pthread_mutex_lock(&mutex_);
     if (backend_->processRank() == request.sender()) {
         checkBuffer_(request.tensorSize());
 
@@ -32,13 +34,13 @@ StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
                 request.elements(),
                 MPIBackend::DataType2MPIType(request.dtype()),
                 request.receiver(),
-                MPIBackend::MPI_TAG_BCC_COMMUNICATE,
+                MPIBackend::MPI_TAG_BCC_COMMUNICATE_AS_SENDER,
                 MPI_COMM_WORLD
         );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
         GLOBAL_INFO_WITH_THREAD_ID("mpi sent tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
-
+        pthread_mutex_unlock(&mutex_);
     } else if (backend_->processRank() == request.receiver()) {
         checkBuffer_(request.tensorSize());
         MPI_Recv(
@@ -46,7 +48,7 @@ StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
                 request.elements(),
                 MPIBackend::DataType2MPIType(request.dtype()),
                 request.sender(),
-                MPIBackend::MPI_TAG_BCC_COMMUNICATE,
+                MPIBackend::MPI_TAG_BCC_COMMUNICATE_AS_RECEIVER,
                 MPI_COMM_WORLD,
                 &statusBuffer_
         );
@@ -54,12 +56,14 @@ StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
         GLOBAL_INFO_WITH_THREAD_ID("copying memory from end2end communicate buffer to output tensor")
 #endif
         memcpy(request.requestingTensorData(), buffer_, request.tensorSize());
+        pthread_mutex_unlock(&mutex_);
     } else {
         using namespace std;
         string msg("received irrelevant request, sender: ");
         msg.append(to_string(request.sender())).append("receiver: ")
                 .append(to_string(request.receiver())).append(", while handling rank is ")
                 .append(to_string(backend_->processRank()));
+        pthread_mutex_unlock(&mutex_);
         throw runtime_error(msg);
     }
     // todo: check status

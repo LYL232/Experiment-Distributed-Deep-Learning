@@ -6,6 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIBLOCKEDEND2ENDCOMMUNICATION_H
 
 #include <memory>
+#include "pthread.h"
 #include "communicate/backend/mpi/MPIBackend.h"
 #include "communicate/end2end/controller/bcc/BlockedEnd2EndCommunication.h"
 
@@ -31,6 +32,8 @@ private:
     mutable std::shared_ptr<MPIBackend> backend_;
 
     mutable MPI_Status statusBuffer_;
+
+    mutable pthread_mutex_t mutex_;
 
     static double inflateFactor_;
 
