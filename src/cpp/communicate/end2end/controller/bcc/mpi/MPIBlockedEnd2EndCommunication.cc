@@ -12,25 +12,29 @@ double MPIBlockedEnd2EndCommunication::inflateFactor_ = 1.5;
 
 MPIBlockedEnd2EndCommunication::MPIBlockedEnd2EndCommunication(
         std::shared_ptr<MPIBackend> backend) :
-        buffer_(nullptr), bufferSize_(0), backend_(backend), statusBuffer_(),
-        mutex_(PTHREAD_MUTEX_INITIALIZER) {}
+        sendBuffer_(nullptr), receiveBuffer_(nullptr),
+        sendBufferSize_(0), receiveBufferSize_(0),
+        backend_(backend), statusBuffer_(),
+        sendMutex_(PTHREAD_MUTEX_INITIALIZER),
+        receiveMutex_(PTHREAD_MUTEX_INITIALIZER) {}
 
 StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
         const TensorEnd2EndCommunicateRequest &request) const {
-    pthread_mutex_lock(&mutex_);
+
     if (backend_->processRank() == request.sender()) {
-        checkBuffer_(request.tensorSize());
+        pthread_mutex_lock(&sendMutex_);
+        checkSendBuffer_(request.tensorSize());
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
         GLOBAL_INFO_WITH_THREAD_ID("copying memory from input tensor to end2end communicate buffer")
 #endif
-        memcpy(buffer_, request.requestingTensorData(), request.tensorSize());
+        memcpy(sendBuffer_, request.requestingTensorData(), request.tensorSize());
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
         GLOBAL_INFO_WITH_THREAD_ID("mpi sending tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
         MPI_Send(
-                buffer_,
+                sendBuffer_,
                 request.elements(),
                 MPIBackend::DataType2MPIType(request.dtype()),
                 request.receiver(),
@@ -40,11 +44,12 @@ StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
         GLOBAL_INFO_WITH_THREAD_ID("mpi sent tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
-        pthread_mutex_unlock(&mutex_);
+        pthread_mutex_unlock(&sendMutex_);
     } else if (backend_->processRank() == request.receiver()) {
-        checkBuffer_(request.tensorSize());
+        pthread_mutex_lock(&receiveMutex_);
+        checkReceiveBuffer_(request.tensorSize());
         MPI_Recv(
-                buffer_,
+                receiveBuffer_,
                 request.elements(),
                 MPIBackend::DataType2MPIType(request.dtype()),
                 request.sender(),
@@ -55,15 +60,14 @@ StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
         GLOBAL_INFO_WITH_THREAD_ID("copying memory from end2end communicate buffer to output tensor")
 #endif
-        memcpy(request.requestingTensorData(), buffer_, request.tensorSize());
-        pthread_mutex_unlock(&mutex_);
+        memcpy(request.requestingTensorData(), receiveBuffer_, request.tensorSize());
+        pthread_mutex_unlock(&receiveMutex_);
     } else {
         using namespace std;
         string msg("received irrelevant request, sender: ");
         msg.append(to_string(request.sender())).append("receiver: ")
                 .append(to_string(request.receiver())).append(", while handling rank is ")
                 .append(to_string(backend_->processRank()));
-        pthread_mutex_unlock(&mutex_);
         throw runtime_error(msg);
     }
     // todo: check status
@@ -71,17 +75,26 @@ StatusCode MPIBlockedEnd2EndCommunication::sendOrReceiveRequest(
     return STATUS_OK;
 }
 
-void MPIBlockedEnd2EndCommunication::checkBuffer_(size_t bytesRequire) const {
-    if (bufferSize_ < bytesRequire) {
-        delete[]buffer_;
-        bufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        buffer_ = new char[bufferSize_];
+void MPIBlockedEnd2EndCommunication::checkSendBuffer_(size_t bytesRequire) const {
+    if (sendBufferSize_ < bytesRequire) {
+        delete[]sendBuffer_;
+        sendBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
+        sendBuffer_ = new char[sendBufferSize_];
+    }
+}
+
+void MPIBlockedEnd2EndCommunication::checkReceiveBuffer_(size_t bytesRequire) const {
+    if (sendBufferSize_ < bytesRequire) {
+        delete[]receiveBuffer_;
+        receiveBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
+        receiveBuffer_ = new char[receiveBufferSize_];
     }
 }
 
 
 MPIBlockedEnd2EndCommunication::~MPIBlockedEnd2EndCommunication() {
-    delete[]buffer_;
+    delete[]sendBuffer_;
+    delete[]receiveBuffer_;
 }
 
 }}}}
