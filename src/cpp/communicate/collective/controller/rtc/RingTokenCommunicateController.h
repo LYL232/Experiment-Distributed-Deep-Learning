@@ -30,6 +30,7 @@ public:
 
     RingTokenCommunicateController(RingTokenCommunicateController &&) = delete;
 
+    virtual void initialize();
 
     bool initialized() const noexcept { return currentStage_ != RTCC_INIT; }
 
@@ -57,7 +58,7 @@ private:
     pthread_cond_t outputTokenCond_;
     Stage currentStage_;
 
-    std::thread sendThread_, recvThread_;
+    std::thread *sendThread_, *recvThread_;
 
     std::queue<std::shared_ptr<Token>> outputtingTokenQueue_;
     RequestIdentifier waitingReadyTokenId_;

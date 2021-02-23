@@ -37,5 +37,4 @@ TensorsCollectiveCommunicateController::broadcast(
     );
 }
 
-
 }}}

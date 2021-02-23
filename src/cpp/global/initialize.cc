@@ -59,11 +59,12 @@ collectiveCommunicateControllerGetter() {
 
         GLOBAL_INFO_WITH_THREAD_ID("new RingTokenCommunicateController")
 
-        collectiveCommunicateController_.reset(
-                new rtc::RingTokenCommunicateController(
-                        backend,
-                        make_shared<rtc::MPIRingTokenCommunication>(mpiBackend_)
-                ));
+        auto *controller = new rtc::RingTokenCommunicateController(
+                backend,
+                make_shared<rtc::MPIRingTokenCommunication>(mpiBackend_));
+        controller->initialize();
+
+        collectiveCommunicateController_.reset(controller);
         GLOBAL_INFO_WITH_THREAD_ID("new RingTokenCommunicateController initialized")
     }
     return collectiveCommunicateController_;

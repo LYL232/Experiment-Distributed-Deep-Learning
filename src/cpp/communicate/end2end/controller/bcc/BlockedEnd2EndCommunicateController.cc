@@ -17,7 +17,7 @@ BlockedEnd2EndCommunicateController::handleRequest(std::shared_ptr<TensorEnd2End
     // 由调用Op本身的线程去阻塞执行这个请求, 而不是像rtc的组通信那样交给后台线程统一执行
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_TF_OP_INTERACTION
     using namespace std;
-    int rank = Global::get().processRank();
+    int rank = backend_->processRank();
     string requestTypeName;
     if (rank == request->sender()) {
         requestTypeName = "send: ";
@@ -34,7 +34,7 @@ StatusCode BlockedEnd2EndCommunicateController::sendOrRecv(const TensorEnd2EndCo
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_COMMUNICATE
     using namespace std;
     string desc;
-    int rank = Global::get().processRank();
+    int rank = backend_->processRank();
     if (rank == request.sender()) {
         desc.append("sending: ");
     } else if (rank == request.receiver()) {
@@ -45,6 +45,5 @@ StatusCode BlockedEnd2EndCommunicateController::sendOrRecv(const TensorEnd2EndCo
 #endif
     return communicationImpl_->sendOrReceiveRequest(request);
 }
-
 
 }}}}

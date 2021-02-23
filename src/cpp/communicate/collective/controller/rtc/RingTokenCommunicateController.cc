@@ -22,11 +22,14 @@ RingTokenCommunicateController::RingTokenCommunicateController(
         stageLock_(PTHREAD_RWLOCK_INITIALIZER),
         outputTokenCond_(PTHREAD_COND_INITIALIZER),
         currentStage_(RTCC_INIT),
-        sendThread_(&RingTokenCommunicateController::sendMain_, this),
-        recvThread_(&RingTokenCommunicateController::recvMain_, this),
+        sendThread_(nullptr), recvThread_(nullptr),
         outputtingTokenQueue_(),
         waitingReadyTokenId_(),
-        registeredRequest_(), communicationImplement_(communicationImplement) {
+        registeredRequest_(), communicationImplement_(communicationImplement) {}
+
+void RingTokenCommunicateController::initialize() {
+    sendThread_ = new std::thread(&RingTokenCommunicateController::sendMain_, this);
+    recvThread_ = new std::thread(&RingTokenCommunicateController::recvMain_, this);
     while (!initialized()) {
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
@@ -38,8 +41,10 @@ RingTokenCommunicateController::~RingTokenCommunicateController() {
             Token::TOKEN_REQUEST_SHUTDOWN,
             "shut down"
     ));
-    sendThread_.join();
-    recvThread_.join();
+    sendThread_->join();
+    recvThread_->join();
+    delete sendThread_;
+    delete recvThread_;
     pthread_mutex_destroy(&outMutex_);
     pthread_rwlock_destroy(&stageLock_);
     pthread_rwlock_destroy(&registerLock_);
