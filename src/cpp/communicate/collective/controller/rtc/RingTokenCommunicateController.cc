@@ -56,7 +56,13 @@ void RingTokenCommunicateController::sendMain_() {
     int rank = backend_->processRank(),
             processes = backend_->processes(),
             receiverRank = (rank + 1) % processes;
-    while (backend_->processes() > 1 && !inStage_(RTCC_SHUT_DOWN)) {
+    if (backend_->processes() <= 1) {
+        pthread_mutex_lock(&outMutex_);
+        fromStageToStage_(RTCC_INIT, RTCC_WAITING_TENSORS);
+        pthread_mutex_unlock(&outMutex_);
+        return;
+    }
+    while (!inStage_(RTCC_SHUT_DOWN)) {
         pthread_mutex_lock(&outMutex_);
         if (inStage_(RTCC_INIT)) {
             if (rank == 0) {

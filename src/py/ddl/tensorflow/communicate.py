@@ -37,9 +37,7 @@ def broadcast_by_group(tensors: Iterable, root_rank):
     else:
         # Graph mode requires an Op
         return tf.group(
-            *[tensor.assign(
-                broadcast(tensor, root_rank))
-                for tensor in tensors]
+            *[tensor.assign(broadcast(tensor, root_rank)) for tensor in tensors]
         )
 
 
