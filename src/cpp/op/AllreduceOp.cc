@@ -4,8 +4,8 @@
 
 #include "global/Global.h"
 #include "op/AllreduceOp.h"
-#include "communicate/collective/controller/TensorsCollectiveCommunicateController.h"
-#include "communicate/collective/allreduce/TensorAllreduceRequest.h"
+#include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
+#include "communicate/tensor/collective/allreduce/TensorAllreduceRequest.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {

@@ -4,7 +4,7 @@
 
 #include "op/EndToEndOp.h"
 #include "global/Global.h"
-#include "communicate/end2end/controller/TensorEnd2EndCommunicateController.h"
+#include "communicate/tensor/end2end/controller/TensorEnd2EndCommunicateController.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {

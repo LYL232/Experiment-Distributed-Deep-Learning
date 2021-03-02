@@ -1,6 +1,7 @@
 import ctypes
 import os
 from tensorflow import load_op_library
+from ddl.tensorflow.message import _CMessage, Message
 
 
 class Global:
@@ -33,6 +34,26 @@ class Global:
         return cls.__c_api
 
     @classmethod
+    def send_message(cls, msg: str, receiver: int):
+        if not cls.__initialized:
+            cls.initialize()
+        cls.__c_api.send_message(
+            ctypes.create_string_buffer(bytes(msg, encoding='UTF-8')),
+            receiver
+        )
+
+    @classmethod
+    def listen_message(cls) -> Message:
+        if not cls.__initialized:
+            cls.initialize()
+        msg_ptr = cls.__c_api.listen_message()
+        message = Message(msg_ptr.contents)
+        # 释放new出来的内存
+        # todo: 或许可以由python端申请: ctypes.create_string_buffer, 这样会自动释放
+        cls.__c_api.destroy_message(msg_ptr)
+        return message
+
+    @classmethod
     def tf_lib(cls):
         if not cls.__initialized:
             cls.initialize()
@@ -45,4 +66,7 @@ class Global:
         # tf_lib 必须先于c_api加载, 否则tensorflow会找不到op
         cls.__tf_lib = load_op_library(cls.path_to_lib)
         cls.__c_api = ctypes.CDLL(cls.path_to_lib, mode=ctypes.RTLD_GLOBAL)
+        cls.__c_api.listen_message.restype = ctypes.POINTER(_CMessage)
+        cls.__c_api.destroy_message.argtypes = [ctypes.POINTER(_CMessage)]
+        cls.__c_api.send_message.argtypes = [ctypes.c_char_p, ctypes.c_int]
         cls.__initialized = True

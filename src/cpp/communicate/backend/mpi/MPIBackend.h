@@ -18,8 +18,9 @@ public:
     enum MPICommunicateTag : int {
         MPI_TAG_RTA_META,
         MPI_TAG_RTA_MSG,
-        MPI_TAG_BCC_COMMUNICATE_AS_SENDER,
-        MPI_TAG_BCC_COMMUNICATE_AS_RECEIVER,
+        MPI_TAG_BCC_COMMUNICATE,
+        MPI_TAG_MESSAGE_META,
+        MPI_TAG_MESSAGE_MSG
     };
 
     MPIBackend(int *argc = nullptr, char ***argv = nullptr);

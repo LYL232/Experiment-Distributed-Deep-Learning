@@ -16,6 +16,7 @@ class CommunicationBackend;
 
 class TensorsCollectiveCommunicateController;
 class TensorEnd2EndCommunicateController;
+class MessageController;
 
 /**
  * 单例模式: 全局对象类
@@ -38,6 +39,8 @@ public:
 
     TensorEnd2EndCommunicateController &end2EndCommunicateController() const noexcept;
 
+    MessageController &messageController() const noexcept;
+
     ~Global();
 
     static Global &get() noexcept;
@@ -48,7 +51,8 @@ private:
     Global(
             std::shared_ptr<CommunicationBackend> communicationBackend,
             std::shared_ptr<TensorsCollectiveCommunicateController> collectiveController,
-            std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController
+            std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController,
+            std::shared_ptr<MessageController> messageController
     );
 
     mutable std::shared_ptr<CommunicationBackend> communicationBackend_;
@@ -56,6 +60,7 @@ private:
             collectiveCommunicateController_;
     mutable std::shared_ptr<TensorEnd2EndCommunicateController>
             end2EndCommunicateController_;
+    mutable std::shared_ptr<MessageController> messageController_;
 
     static Global instance_;
 };

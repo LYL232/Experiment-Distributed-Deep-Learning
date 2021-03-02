@@ -4,8 +4,8 @@
 
 #include "op/BroadcastOp.h"
 #include "global/Global.h"
-#include "communicate/collective/controller/TensorsCollectiveCommunicateController.h"
-#include "communicate/collective/broadcast/TensorBroadcastRequest.h"
+#include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
+#include "communicate/tensor/collective/broadcast/TensorBroadcastRequest.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -31,8 +31,8 @@ void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace std;
     // 获取输入 tensor
     const Tensor &input = context->input(0);
-    // 创建输出 tensor, context->allocate_output 用来分配输出内存
     Tensor *output = nullptr;
+    // todo: 优化: 让根节点不需要申请内存, 直接使用input作为输出
     OP_REQUIRES_OK_ASYNC(
             context, context->allocate_output(0, input.shape(), &output), done
     );

@@ -7,8 +7,9 @@
 
 #include <fstream>
 #include "global/GlobalLog.h"
-#include "communicate/collective/controller/TensorsCollectiveCommunicateController.h"
-#include "communicate/end2end/controller/TensorEnd2EndCommunicateController.h"
+#include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
+#include "communicate/tensor/end2end/controller/TensorEnd2EndCommunicateController.h"
+#include "communicate/message/MessageController.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -19,6 +20,9 @@ std::shared_ptr<CommunicationBackend> communicationBackendGetter();
 std::shared_ptr<TensorsCollectiveCommunicateController> collectiveCommunicateControllerGetter();
 
 std::shared_ptr<TensorEnd2EndCommunicateController> end2EndCommunicateControllerGetter();
+
+std::shared_ptr<MessageController> messageControllerGetter();
+
 
 }}}
 
