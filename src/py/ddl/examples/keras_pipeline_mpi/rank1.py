@@ -61,6 +61,7 @@ class SecondStageModel:
     def __init__(self):
         from ddl.examples.keras_pipeline_mpi.main import lr, \
             MSG_GRADIENTS_BACK_PROPAGATION
+        from ddl.tensorflow.global_class import Global
         log('SecondStage: started, initializing')
 
         self.__communicate_cond: Condition = Condition()
@@ -104,6 +105,25 @@ class SecondStageModel:
         self.__communicate_cond.acquire()
         self.__status = self.STATUS_READY
         self.__communicate_cond.release()
+
+        self.__session = tf.compat.v1.Session()
+
+        self.__receive_fwd_outputs_placeholder = tf.compat.v1.placeholder(
+            dtype=tf.float32, shape=(None, 196))
+        self.__receive_fwd_outputs = Global.tf_lib().receive_tensor(
+            self.__receive_fwd_outputs_placeholder,
+            sender=last_stage_rank,
+            name='0-forward-input-to-1'
+        )
+        self.__receive_fwd_labels_placeholder = tf.compat.v1.placeholder(
+            dtype=tf.float32, shape=(None, 1))
+        with tf.control_dependencies([self.__receive_fwd_outputs]):
+            self.__receive_fwd_labels = Global.tf_lib().receive_tensor(
+                self.__receive_fwd_labels_placeholder,
+                sender=last_stage_rank,
+                name='0-forward-label-to-1'
+            )
+
         log('SecondStage: started, initialized')
 
     def run(self) -> None:
@@ -179,22 +199,30 @@ class SecondStageModel:
 
         input_shape = (end - begin, 196)
         label_shape = (end - begin, 1)
-        inputs = Global.tf_lib().receive_tensor(
-            tf.zeros(shape=input_shape, dtype=tf.float32),
-            sender=last_stage_rank,
-            name='0-forward-input-to-1'
-        )
-        labels = Global.tf_lib().receive_tensor(
-            tf.zeros(shape=label_shape, dtype=tf.float32),
-            sender=last_stage_rank,
-            name='0-forward-label-to-1'
-        )
 
-        if not executing_eagerly():
-            with tf.compat.v1.Session() as session:
-                inputs_value = inputs.eval(session=session)
-                with tf.control_dependencies([inputs]):
-                    labels_value = labels.eval(session=session)
+        if executing_eagerly():
+            inputs_value = Global.tf_lib().receive_tensor(
+                tf.zeros(shape=input_shape, dtype=tf.float32),
+                sender=last_stage_rank,
+                name='0-forward-input-to-1'
+            )
+            labels_value = Global.tf_lib().receive_tensor(
+                tf.zeros(shape=label_shape, dtype=tf.float32),
+                sender=last_stage_rank,
+                name='0-forward-label-to-1'
+            )
+        else:
+            inputs_value, labels_value = self.__session.run(
+                [self.__receive_fwd_outputs, self.__receive_fwd_labels],
+                feed_dict={
+                    self.__receive_fwd_outputs_placeholder: np.zeros(
+                        shape=input_shape
+                    ),
+                    self.__receive_fwd_labels_placeholder: np.zeros(
+                        shape=label_shape
+                    )
+                }
+            )
 
         self.__status = self.STATUS_GOT_FWD
         self.__communicate_cond.notify_all()
@@ -215,6 +243,10 @@ class SecondStageModel:
             self.__last_inputs = inputs
             begin = 0 if end >= samples else begin + batch_size
             yield inputs, labels
+
+    def __del__(self):
+        if self.__session is not None:
+            self.__session.close()
 
 
 def main():

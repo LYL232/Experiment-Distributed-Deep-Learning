@@ -51,7 +51,7 @@ def main():
         callbacks.append(
             tf.keras.callbacks.ModelCheckpoint('./checkpoint-{epoch}.h5'))
 
-    verbose = 2 if Global.process_rank() == 0 else 0
+    verbose = 1 if Global.process_rank() == 0 else 0
 
     mnist_model.fit(
         dataset, steps_per_epoch=500 // Global.processes(),
