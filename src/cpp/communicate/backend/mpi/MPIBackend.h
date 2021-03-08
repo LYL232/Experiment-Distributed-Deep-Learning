@@ -50,7 +50,7 @@ public:
      * @param dtype
      * @return MPI_TYPE
      */
-    static int DataType2MPIType(DataType dtype) noexcept;
+    static MPI_Datatype DataType2MPIType(DataType dtype) noexcept;
 
     /**
      * AllreduceOperation到MPIOp的映射

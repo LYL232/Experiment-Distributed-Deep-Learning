@@ -72,7 +72,7 @@ StatusCode MPIBackend::broadcast(
     return STATUS_OK;
 }
 
-int MPIBackend::DataType2MPIType(DataType dtype) noexcept {
+MPI_Datatype MPIBackend::DataType2MPIType(DataType dtype) noexcept {
     using namespace tensorflow;
     switch (dtype) {
         case DT_FLOAT:
