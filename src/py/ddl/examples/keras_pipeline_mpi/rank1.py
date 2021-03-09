@@ -4,26 +4,11 @@ import numpy as np
 import tensorflow as tf
 import json
 from threading import Condition
-from tensorflow.python import ops
+from tensorflow.python.framework.ops import Tensor
+from tensorflow.python.framework.ops import RegisterGradient
 # noinspection PyProtectedMember
 from tensorflow.python.ops.nn_grad import _BiasAddGrad
 from tensorflow.keras.callbacks import Callback
-
-name_need_grad = 'need_bias'
-
-# noinspection PyProtectedMember
-tf.python.ops._gradient_registry._registry.pop('BiasAdd', None)
-
-handler_dict = {}
-
-
-@ops.RegisterGradient('BiasAdd')
-def us_bias_add_grad(op, received_grad: ops.Tensor):
-    for key, handler in handler_dict.items():
-        if key in received_grad.name:
-            received_grad = handler(received_grad)
-    return _BiasAddGrad(op, received_grad)
-
 
 log_file = open('pylog-1.log', 'w')
 
@@ -36,6 +21,66 @@ def log(msg: str, flush: bool = True):
         log_file.write(msg + '\n')
         if flush:
             log_file.flush()
+
+
+class PipelineBackPropagationDense(tf.keras.layers.Dense):
+    """
+    分布式流水线并行中向上一层中进行误差后向传播的全连接层
+    """
+
+    def __init__(
+            self, units, activation=None,
+            kernel_initializer='glorot_uniform', bias_initializer='zeros',
+            kernel_regularizer=None, bias_regularizer=None,
+            activity_regularizer=None, kernel_constraint=None,
+            bias_constraint=None,
+            **kwargs):
+        """
+        @param 见Dense的文档
+        """
+        super(PipelineBackPropagationDense, self).__init__(
+            units, activation, True, kernel_initializer,
+            bias_initializer, kernel_regularizer,
+            bias_regularizer, activity_regularizer,
+            kernel_constraint, bias_constraint, **kwargs)
+
+    def call(self, inputs):
+        """
+        替换原有的偏置加法OP, 让其正常完成加添置的同时, 将批次内的所有样例的偏差传递到上一个节点
+        @param inputs: 见父类文档
+        @return: 见父类文档
+        """
+
+        @RegisterGradient('DenseForwardAndSendGrad')
+        def dense_forward_and_send_grad(op, received_grad: Tensor):
+            """
+            替换原有OP, 将其传给ForwardAndSendOp, 将上一阶段
+            @param op: _BiasAddGrad的第一函数参数
+            @param received_grad: 偏置应收到的每个样例产生的梯度
+            @return: _BiasAddGrad returns
+            """
+            from ddl.tensorflow.global_class import Global
+            from ddl.examples.keras_pipeline_mpi.main import \
+                MSG_GRADIENTS_BACK_PROPAGATION
+            # 需要进行一次矩阵乘法
+            last_stage_errors = tf.transpose(tf.matmul(
+                self.kernel,
+                tf.transpose(received_grad)
+            ))
+
+            received_grad = Global.tf_lib().forward_and_send(
+                received_grad, last_stage_errors, receiver=last_stage_rank,
+                msg=json.dumps({
+                    'type': MSG_GRADIENTS_BACK_PROPAGATION
+                })
+            )
+            return _BiasAddGrad(op, received_grad)
+
+        # 替换OP
+        with tf.compat.v1.get_default_graph().gradient_override_map({
+            'BiasAdd': 'DenseForwardAndSendGrad'
+        }):
+            return super(PipelineBackPropagationDense, self).call(inputs)
 
 
 class TrainingEndCallBack(Callback):
@@ -59,8 +104,7 @@ class SecondStageModel:
     STATUS_DONE = 3
 
     def __init__(self):
-        from ddl.examples.keras_pipeline_mpi.main import lr, \
-            MSG_GRADIENTS_BACK_PROPAGATION
+        from ddl.examples.keras_pipeline_mpi.main import lr
         from ddl.tensorflow.global_class import Global
         log('SecondStage: started, initializing')
 
@@ -69,28 +113,11 @@ class SecondStageModel:
         self.__model = tf.keras.Sequential([
             # SecondStage的输入是FirstStage的输出
             tf.keras.layers.Flatten(input_shape=(196,)),
-            tf.keras.layers.Dense(128, activation='relu', name=name_need_grad),
+            PipelineBackPropagationDense(
+                128, activation='relu', name='dense-0'),
             tf.keras.layers.Dense(256, activation='relu', name='dense-1'),
             tf.keras.layers.Dense(10, activation='softmax', name='dense-2')
         ])
-
-        def first_layer_bias_grad_handler(grad: ops.Tensor):
-            from ddl.tensorflow.global_class import Global
-            weights = self.__model.get_layer(name_need_grad).weights[0]
-            # 需要与第一层的权重模型进行一次矩阵乘法
-            diff = tf.transpose(tf.matmul(
-                weights,
-                tf.transpose(grad)
-            ))
-
-            return Global.tf_lib().forward_and_send(
-                grad, diff, receiver=last_stage_rank,
-                msg=json.dumps({
-                    'type': MSG_GRADIENTS_BACK_PROPAGATION
-                })
-            )
-
-        handler_dict[name_need_grad] = first_layer_bias_grad_handler
 
         self.__model.compile(
             loss='sparse_categorical_crossentropy',
