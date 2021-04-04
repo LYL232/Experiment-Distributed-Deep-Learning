@@ -5,46 +5,54 @@
 #include <cstring>
 #include "global/Global.h"
 #include "communicate/message/mpi/MPIMessageController.h"
+#include "communicate/backend/mpi/MPICommunicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 double MPIMessageController::inflateFactor_ = 1.5;
 
 MPIMessageController::MPIMessageController(std::shared_ptr<MPIBackend> backend) :
-        backend_(backend), buffer_(nullptr), bufferSize_(0), statusBuffer_() {}
+        mutex_(PTHREAD_MUTEX_INITIALIZER), backend_(std::move(backend)),
+        buffer_(nullptr), bufferSize_(0), statusBuffer_() {}
 
-void MPIMessageController::sendMessage(const Message &message, int receiver) {
-    size_t len = strlen(message.msg_ptr);
+void MPIMessageController::sendMessage(
+        const Message &message, int receiver,
+        const std::shared_ptr<Communicator> &communicator) {
+    pthread_mutex_lock(&mutex_);
+    size_t len = message.length;
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATE_MESSAGE_LOG_MESSAGE
     GLOBAL_INFO_WITH_THREAD_ID(
             "before sending message: " << message.msg_ptr << ", to " << receiver)
 #endif
     checkBuffer_(len);
+    const auto &comm = dynamic_cast<const MPICommunicator &>(*communicator);
+
     // 先传输字符串的长度
     MPI_Send(
             &len, sizeof(size_t), MPI_BYTE, receiver,
-            MPIBackend::MPI_TAG_MESSAGE_META, MPI_COMM_WORLD
+            MPIBackend::MPI_TAG_MESSAGE_META, comm.mpiComm()
     );
     MPI_Send(
             message.msg_ptr, len, MPI_CHAR, receiver,
-            MPIBackend::MPI_TAG_MESSAGE_MSG, MPI_COMM_WORLD
+            MPIBackend::MPI_TAG_MESSAGE_MSG, comm.mpiComm()
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATE_MESSAGE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sent Message")
 #endif
+    pthread_mutex_unlock(&mutex_);
 }
 
-Message *MPIMessageController::listen() {
+Message *MPIMessageController::listen(const Communicator &communicator) {
     size_t len;
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATE_MESSAGE_LOG_MESSAGE
     GLOBAL_INFO_WITH_THREAD_ID("listen message")
 #endif
-
+    const auto &comm = dynamic_cast<const MPICommunicator &>(communicator);
     MPI_Recv(
             &len, sizeof(size_t), MPI_BYTE, MPI_ANY_SOURCE,
             MPIBackend::MPI_TAG_MESSAGE_META,
-            MPI_COMM_WORLD, &statusBuffer_
+            comm.mpiComm(), &statusBuffer_
     );
 
     int sender = statusBuffer_.MPI_SOURCE;
@@ -59,18 +67,16 @@ Message *MPIMessageController::listen() {
     MPI_Recv(
             buffer_, len, MPI_CHAR, sender,
             MPIBackend::MPI_TAG_MESSAGE_MSG,
-            MPI_COMM_WORLD, &statusBuffer_
+            comm.mpiComm(), &statusBuffer_
     );
 
-    char *msg = new char[len + 1];
-    memcpy(msg, buffer_, len);
-    msg[len] = 0;
-
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATE_MESSAGE_LOG_MESSAGE
-    GLOBAL_INFO_WITH_THREAD_ID("received message msg: " << msg << ", sender: " << sender)
+    buffer_[len] = 0;
+    GLOBAL_INFO_WITH_THREAD_ID("received message msg: " << (const char *) buffer_ << ", sender: " << sender)
 #endif
-
-    return new Message(msg, sender);
+    auto *res = new Message(buffer_, sender, len);
+    pthread_mutex_unlock(&mutex_);
+    return res;
 }
 
 void MPIMessageController::checkBuffer_(size_t byteSize) {
@@ -82,6 +88,7 @@ void MPIMessageController::checkBuffer_(size_t byteSize) {
 
 MPIMessageController::~MPIMessageController() {
     delete[]buffer_;
+    pthread_mutex_destroy(&mutex_);
 }
 
 

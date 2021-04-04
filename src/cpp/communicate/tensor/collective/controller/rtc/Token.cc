@@ -2,6 +2,7 @@
 // Created by LYL232 on 2021/2/13.
 //
 
+#include "global/LogConfig.h"
 #include "communicate/tensor/collective/controller/rtc/Token.h"
 #include "communicate/tensor/collective/allreduce/TensorAllreduceRequest.h"
 #include "communicate/tensor/collective/broadcast/TensorBroadcastRequest.h"

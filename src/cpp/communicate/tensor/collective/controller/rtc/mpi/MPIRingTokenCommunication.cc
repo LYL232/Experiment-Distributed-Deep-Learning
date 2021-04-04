@@ -12,40 +12,44 @@ namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 double MPIRingTokenCommunication::inflateFactor_ = 1.5;
 
 MPIRingTokenCommunication::MPIRingTokenCommunication(
-        std::shared_ptr<MPIBackend> backend) noexcept
-        : RingTokenCommunication(),
+        std::shared_ptr<Communicator> communicator) noexcept
+        : RingTokenCommunication(std::move(communicator)),
           statusBuffer_(),
           sendBuffer_(nullptr), recvBuffer_(nullptr),
           collectiveCommunicateSendBuffer_(nullptr), collectiveCommunicateRecvBuffer_(nullptr),
           sendBufferSize_(0), recvBufferSize_(0), collectiveCommunicateBufferSize_(0),
           tokenMetaSize_(sizeof(Token::Type) + sizeof(Token::RequestType) + sizeof(size_t)),
-          backend_(backend) {}
+          mpiCommunicator_(dynamic_cast<const MPICommunicator &>(*communicator_)) {}
 
 void
 MPIRingTokenCommunication::communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const {
     using namespace std;
+
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("before mpi sending Token")
 #endif
     size_t stringSize = token->msg().length();
     Token::Type tType = token->type();
     Token::RequestType rType = token->requestType();
-
+    
     checkSendBuffer_(max(tokenMetaSize_, stringSize));
     // 发送Token:
     // 1. 先打包发送描述信息: token.type(), token.requestType(), token.msg_.length()
     // 2. 再发送token.msg_.length()的字符串
     int offset = 0;
-    MPI_Pack(&tType, sizeof(Token::Type), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset, MPI_COMM_WORLD);
-    MPI_Pack(&rType, sizeof(Token::RequestType), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset, MPI_COMM_WORLD);
-    MPI_Pack(&stringSize, sizeof(size_t), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset, MPI_COMM_WORLD);
+    MPI_Pack(&tType, sizeof(Token::Type), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset,
+             mpiCommunicator_.mpiComm());
+    MPI_Pack(&rType, sizeof(Token::RequestType), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset,
+             mpiCommunicator_.mpiComm());
+    MPI_Pack(&stringSize, sizeof(size_t), MPI_BYTE, sendBuffer_, tokenMetaSize_, &offset,
+             mpiCommunicator_.mpiComm());
     MPI_Send(
             sendBuffer_, offset, MPI_PACKED, receiver,
-            MPIBackend::MPI_TAG_RTA_META, MPI_COMM_WORLD
+            MPIBackend::MPI_TAG_RTA_META, mpiCommunicator_.mpiComm()
     );
     MPI_Send(
             token->msg().c_str(), (int) stringSize, MPI_CHAR, receiver,
-            MPIBackend::MPI_TAG_RTA_MSG, MPI_COMM_WORLD
+            MPIBackend::MPI_TAG_RTA_MSG, mpiCommunicator_.mpiComm()
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sent Token")
@@ -53,8 +57,8 @@ MPIRingTokenCommunication::communicationSendTokenTo(int receiver, const std::sha
 }
 
 std::shared_ptr<Token> MPIRingTokenCommunication::communicationReceiveTokenFrom(int sender) const {
-    int rank = backend_->processRank(),
-            processes = backend_->processes(),
+    int rank = communicator_->rank(),
+            processes = communicator_->size(),
             senderRank = (rank - 1 + processes) % processes,
             offset;
     size_t stringSize;
@@ -68,21 +72,24 @@ std::shared_ptr<Token> MPIRingTokenCommunication::communicationReceiveTokenFrom(
     MPI_Recv(
             recvBuffer_, tokenMetaSize_, MPI_PACKED, senderRank,
             MPIBackend::MPI_TAG_RTA_META,
-            MPI_COMM_WORLD, &statusBuffer_
+            mpiCommunicator_.mpiComm(), &statusBuffer_
     );
 
     // todo: 检查status_, 出错则做相应处理
     offset = 0;
-    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &tType, sizeof(Token::Type), MPI_BYTE, MPI_COMM_WORLD);
-    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &rType, sizeof(Token::RequestType), MPI_BYTE, MPI_COMM_WORLD);
-    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &stringSize, sizeof(size_t), MPI_BYTE, MPI_COMM_WORLD);
+    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &tType, sizeof(Token::Type), MPI_BYTE,
+               mpiCommunicator_.mpiComm());
+    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &rType, sizeof(Token::RequestType), MPI_BYTE,
+               mpiCommunicator_.mpiComm());
+    MPI_Unpack(recvBuffer_, tokenMetaSize_, &offset, &stringSize, sizeof(size_t), MPI_BYTE,
+               mpiCommunicator_.mpiComm());
 
     checkRecvBuffer_(stringSize + 1);
 
     MPI_Recv(
             recvBuffer_, stringSize, MPI_PACKED, senderRank,
             MPIBackend::MPI_TAG_RTA_MSG,
-            MPI_COMM_WORLD, &statusBuffer_
+            mpiCommunicator_.mpiComm(), &statusBuffer_
     );
     // todo: 检查status_, 出错则做相应处理
 
@@ -104,8 +111,7 @@ MPIRingTokenCommunication::allreduceRequests(const Requests &requests) const {
     GLOBAL_INFO_WITH_THREAD_ID("copying memory from input tensors to collective communicate buffer")
 #endif
 
-    for (size_t i = 0; i < requests.size(); ++i) {
-        auto &request = requests[i];
+    for (const auto &request : requests) {
         memcpy(
                 collectiveCommunicateSendBuffer_ + offset,
                 request->requestingTensorData(),
@@ -116,7 +122,7 @@ MPIRingTokenCommunication::allreduceRequests(const Requests &requests) const {
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("before allreduce")
 #endif
-    backend_->allreduce(
+    communicator_->allreduce(
             collectiveCommunicateSendBuffer_, collectiveCommunicateRecvBuffer_,
             elements,
             firstRequest->dtype(),
@@ -126,8 +132,7 @@ MPIRingTokenCommunication::allreduceRequests(const Requests &requests) const {
     GLOBAL_INFO_WITH_THREAD_ID("allreduced, copying memory from collective communicate buffer to output tensors")
 #endif
     offset = 0;
-    for (size_t i = 0; i < requests.size(); ++i) {
-        auto &request = requests[i];
+    for (const auto &request : requests) {
         memcpy(
                 request->resultTensorData(),
                 collectiveCommunicateRecvBuffer_ + offset,
@@ -158,8 +163,7 @@ MPIRingTokenCommunication::broadcastRequests(const Requests &requests) const {
     GLOBAL_INFO_WITH_THREAD_ID("copying memory from input tensors to collective communicate buffer")
 #endif
 
-    for (size_t i = 0; i < requests.size(); ++i) {
-        auto &request = requests[i];
+    for (const auto &request : requests) {
         memcpy(
                 collectiveCommunicateSendBuffer_ + offset,
                 request->requestingTensorData(),
@@ -170,7 +174,7 @@ MPIRingTokenCommunication::broadcastRequests(const Requests &requests) const {
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("before broadcast")
 #endif
-    backend_->broadcast(
+    communicator_->broadcast(
             collectiveCommunicateSendBuffer_,
             elements,
             firstRequest->dtype(),
@@ -180,8 +184,7 @@ MPIRingTokenCommunication::broadcastRequests(const Requests &requests) const {
     GLOBAL_INFO_WITH_THREAD_ID("broadcasted, copying memory from collective communicate buffer to output tensors")
 #endif
     offset = 0;
-    for (size_t i = 0; i < requests.size(); ++i) {
-        auto &request = requests[i];
+    for (const auto &request : requests) {
         memcpy(
                 request->resultTensorData(),
                 collectiveCommunicateSendBuffer_ + offset,
@@ -227,8 +230,7 @@ void MPIRingTokenCommunication::checkCollectiveCommunicateBuffer_(size_t bytesRe
 void MPIRingTokenCommunication::getRequestsInfo(
         const Requests &requests, size_t &elements, size_t &byteSize) noexcept {
     elements = byteSize = 0;
-    for (size_t i = 0; i < requests.size(); ++i) {
-        const auto &request = requests[i];
+    for (const auto &request : requests) {
         elements += request->elements();
         byteSize += request->tensorSize();
     }

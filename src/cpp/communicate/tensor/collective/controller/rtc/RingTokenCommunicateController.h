@@ -5,98 +5,49 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RINGTOKENCOMMUNICATECONTROLLER_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RINGTOKENCOMMUNICATECONTROLLER_H
 
-#include <thread>
-#include <pthread.h>
-#include <queue>
-#include <map>
-#include <set>
-#include "communicate/backend/CommunicationBackend.h"
-#include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
-#include "communicate/tensor/collective/controller/rtc/RingTokenCommunication.h"
+
+#include "communicate/tensor/collective/controller/rtc/RingTokenCommunicateHandler.h"
 
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 
+/**
+ * 由于设计时一个RingTokenCommunicateHandler只能处理一个通信域, 所以为了能够处理所有通信域的请求,
+ * 实现此类, 主要思路是用一个map记录每个通信域和其对应的Handler, 遇到新的就新建一个Handler, 否则返回已经存在的Handler,
+ * 或许可以设计一个通用的
+ */
 class RingTokenCommunicateController : public TensorsCollectiveCommunicateController {
 public:
-    typedef std::pair<std::string, std::string> RequestIdentifier;
-
-    RingTokenCommunicateController(
-            std::shared_ptr<CommunicationBackend> backend,
-            std::shared_ptr<RingTokenCommunication> communicationImplement
-    );
+    RingTokenCommunicateController();
 
     RingTokenCommunicateController(const RingTokenCommunicateController &) = delete;
 
     RingTokenCommunicateController(RingTokenCommunicateController &&) = delete;
 
-    virtual void initialize();
+    StatusCode handleRequest(const std::shared_ptr<TensorCollectiveCommunicateRequest> &request) override;
 
-    bool initialized() const noexcept { return currentStage_ != RTCC_INIT; }
+    StatusCode allreduce(const Requests &requests) override;
 
-    virtual ~RingTokenCommunicateController();
+    StatusCode broadcast(const Requests &requests) override;
 
-    virtual StatusCode handleRequest(std::shared_ptr<TensorCollectiveCommunicateRequest>) override;
+    ~RingTokenCommunicateController() override;
 
-    virtual StatusCode allreduce(const Requests &requests) override;
+protected:
 
-    virtual StatusCode broadcast(const Requests &requests) override;
+    /**
+     * 由子类实现的创建一个新的Handler方法
+     * @return
+     */
+    virtual std::shared_ptr<RingTokenCommunicateHandler> newHandler(
+            const std::shared_ptr<Communicator> &communicator);
 
 private:
-    enum Stage : int {
-        RTCC_INIT = 0,
-        RTCC_WAITING_TENSORS = 1,
-        RTCC_WAITING_READY_TOKEN = 2,
-        RTCC_WAITING_SYNC_TOKEN = 3,
-        RTCC_WAITING_COMMUNICATE_TOKEN = 4,
-        RTCC_COMMUNICATING = 5,
-        RTCC_SHUT_DOWN,
-    };
+    RingTokenCommunicateHandler &getHandler(const std::shared_ptr<Communicator> &communicator);
 
-    pthread_mutex_t outMutex_;
-    pthread_rwlock_t registerLock_, stageLock_;
-    pthread_cond_t outputTokenCond_;
-    Stage currentStage_;
-
-    std::thread *sendThread_, *recvThread_;
-
-    std::queue<std::shared_ptr<Token>> outputtingTokenQueue_;
-    RequestIdentifier waitingReadyTokenId_;
-
-    std::map<RequestIdentifier, std::shared_ptr<TensorCollectiveCommunicateRequest>> registeredRequest_;
-
-    std::shared_ptr<RingTokenCommunication> communicationImplement_;
-
-    static std::string tokenSplitDelimiter_;
-    static std::string tokenKeySplitDelimiter_;
-
-    void fromStageToStage_(Stage from, Stage to);
-
-    void forceToStage_(Stage to);
-
-    bool inStage_(Stage stage);
-
-    /**
-     * 后台发送线程主函数
-     */
-    void sendMain_();
-
-    void fillTokenSendBufferAndNotify_(std::shared_ptr<Token> token);
-
-    /**
-     * 后台接收线程主函数
-     */
-    void recvMain_();
-
-    void handleReceivingTokenAsTokenGenerator_(std::shared_ptr<Token> token);
-
-    void handleReceivingTokenAsTokenReceiver_(std::shared_ptr<Token> token);
-
-    StatusCode communicateById_(const std::set<RequestIdentifier> &idSet);
-
-    static std::set<RequestIdentifier> getIdSetFromToken_(const Token &token);
-
-    static std::string stageName_(Stage stage);
+    // 用来记录每个通信域的控制器, 懒加载, 按需分配
+    std::map<Communicator::ID, std::shared_ptr<RingTokenCommunicateHandler>> handlerMap_;
+    // 读写锁
+    pthread_rwlock_t rwlock_;
 };
 
 }}}}

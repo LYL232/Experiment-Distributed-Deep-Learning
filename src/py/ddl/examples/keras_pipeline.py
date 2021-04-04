@@ -55,7 +55,7 @@ class FirstStageProcess(Process):
         """
         虚假的初始化函数: 因为Process在start的时候会调用pickle序列化self,
         然而有很多成员变量无法被初始化, 所以在run的时候才进行初始化
-        :param pipe: 进行通信的管道对象
+        :@param pipe: 进行通信的管道对象
         """
         super().__init__()
         self.__pipe = pipe
@@ -110,9 +110,9 @@ class FirstStageProcess(Process):
             """
             正确的FirstStage loss函数, 此函数的训练效果理论上与原模型的训练效果一致,
             其实就是偏差与输出的Hadamard积, 即按对应元素相乘
-            :param diff: 从SecondStage后向传播得到的偏差数组
-            :param output: 模型的输出
-            :return: loss
+            :@param diff: 从SecondStage后向传播得到的偏差数组
+            :@param output: 模型的输出
+            :@return: loss
             """
             return tf.reduce_mean(
                 tf.multiply(diff, output),
@@ -123,9 +123,9 @@ class FirstStageProcess(Process):
             """
             错误的FirstStage loss函数, 此函数的训练效果会导致模型loss先减后增,
             因为先进行平均会导致过多的信息损失, 从而计算出错误的优化方向
-            :param diff: 从SecondStage后向传播得到的偏差数组
-            :param output: 模型的输出
-            :return: loss
+            :@param diff: 从SecondStage后向传播得到的偏差数组
+            :@param output: 模型的输出
+            :@return: loss
             """
             return tf.reduce_mean(
                 tf.multiply(
@@ -154,9 +154,9 @@ class FirstStageProcess(Process):
     def __send_forward_propagation_result(self, begin: int, end: int):
         """
         完成前向传播并将结果传输给SecondStage
-        :param begin: 数据batch在整个数据库的开始索引
-        :param end: 数据batch在整个数据库的结束索引
-        :return: None
+        :@param begin: 数据batch在整个数据库的开始索引
+        :@param end: 数据batch在整个数据库的结束索引
+        :@return: None
         """
         inputs = self.__data[begin:end, ...]
         self.__last_forward_propagation_inputs = inputs
@@ -171,7 +171,7 @@ class FirstStageProcess(Process):
     def __wait_back_propagation_msg(self):
         """
         等待SecondStage完成后向传播并使用后向传播得到的偏差进行模型的训练
-        :return: None
+        :@return: None
         """
         log('FirstStage: waiting back propagation result')
         msg = self.__pipe.recv()
@@ -214,7 +214,7 @@ class SecondStageProcess(Process):
         """
         虚假的初始化函数: 因为Process在start的时候会调用pickle序列化self,
         然而有很多成员变量无法被初始化, 所以在run的时候才进行初始化
-        :param pipe: 进行通信的管道对象
+        :@param pipe: 进行通信的管道对象
         """
         super().__init__()
         self.__pipe = pipe
@@ -274,8 +274,8 @@ class SecondStageProcess(Process):
         def pipeline_gradients_back_propagation(gradients):
             """
             优化器应用梯度前的回调函数, 需要将第一层的偏置的梯度传输给FirstStage
-            :param gradients: 所有变量的梯度列表
-            :return: None
+            :@param gradients: 所有变量的梯度列表
+            :@return: None
             """
             if first_stage_with_correct_loss:
                 # 在loss函数手动对每个样例计算得到的梯度, shape[0]=输入的样例个数
@@ -388,9 +388,9 @@ class SecondStageProcess(Process):
             (np.ndarray, np.ndarray):
         """
         从FirstStage获取前向传播的结果
-        :param begin: 数据batch在整个数据库的开始索引
-        :param end: 数据batch在整个数据库的结束索引
-        :return: 模型batch的输入, batch的label
+        :@param begin: 数据batch在整个数据库的开始索引
+        :@param end: 数据batch在整个数据库的结束索引
+        :@return: 模型batch的输入, batch的label
         """
         self.__pipe_cond.acquire()
         while self.__status != self.STATUS_READY and \
@@ -418,7 +418,7 @@ class SecondStageProcess(Process):
     def __second_stage_data_generator(self):
         """
         模型训练的数据生成器
-        :return: 数据获取迭代器
+        :@return: 数据获取迭代器
         """
         begin = 0
         while True:

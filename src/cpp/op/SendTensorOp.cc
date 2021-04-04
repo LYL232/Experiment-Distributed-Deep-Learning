@@ -16,10 +16,13 @@ REGISTER_OP("SendTensor")
         .Attr("T: {int32, int64, float32, float64}")
         .Input("input: T")
         .Attr("receiver: int")
+        .Attr("communicator_id: int")
         .SetShapeFn(shape_inference::NoOutputs);
 
-SendTensorOp::SendTensorOp(tensorflow::OpKernelConstruction *context) : AsyncOpKernel(context) {
+SendTensorOp::SendTensorOp(tensorflow::OpKernelConstruction *context) :
+        AsyncOpKernel(context), receiver_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("receiver", &receiver_));
+    OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
 }
 
 void SendTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
@@ -37,7 +40,7 @@ void SendTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
                         context->SetStatus(statusCode2TFStatus(code));
                         done();
                     },
-                    receiver_
+                    receiver_, global.getCommunicator(communicatorId_)
             )
     );
 }

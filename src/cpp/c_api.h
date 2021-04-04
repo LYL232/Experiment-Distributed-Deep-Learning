@@ -6,24 +6,37 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_C_API_H
 
 #include "communicate/message/message.h"
+#include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 extern "C" {
 
-int processes();
+int communicator_rank(Communicator::ID ptr);
 
-int process_rank();
+int communicator_size(Communicator::ID ptr);
 
-Message *listen_message();
+Communicator::ID world_communicator();
+
+Message *listen_message(Communicator::ID communicatorId);
 
 void destroy_message(Message *messagePtr);
 
 // example
 // str_ptr = c_char_p('abc')
-// c_api.snd_message(str_ptr, receiver)
+// c_api.snd_message(str_ptr, receiver, Communicator.id, len)
 // todo: 返回状态码
-void send_message(const char *msg, int receiverRank);
+void send_message(const char *msg, int receiverRank, Communicator::ID communicatorId, size_t len);
+
+Communicator::ID split_communicator(Communicator::ID communicatorId, int color, int key);
+
+void detach_communicator(Communicator::ID communicatorId);
+
+void py_info(const char *logStr);
+
+void py_debug(const char *logStr);
+
+void py_error(const char *logStr);
 
 }
 

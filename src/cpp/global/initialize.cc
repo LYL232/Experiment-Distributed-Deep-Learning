@@ -4,9 +4,7 @@
 #include <mutex>
 #include "global/Global.h"
 #include "global/initialize.h"
-#include "communicate/backend/mpi/MPIBackend.h"
-#include "communicate/tensor/collective/controller/rtc/RingTokenCommunicateController.h"
-#include "communicate/tensor/collective/controller/rtc/mpi/MPIRingTokenCommunication.h"
+#include "communicate/tensor/collective/controller/rtc/mpi/MPIRingTokenCommunicateController.h"
 #include "communicate/tensor/end2end/controller/bcc/BlockedEnd2EndCommunicateController.h"
 #include "communicate/tensor/end2end/controller/bcc/mpi/MPIBlockedEnd2EndCommunication.h"
 #include "communicate/message/mpi/MPIMessageController.h"
@@ -23,15 +21,15 @@ std::shared_ptr<MPIMessageController> mpiMessageController_;
 }
 
 
-std::shared_ptr<GlobalLog> globalLogGetter() {
+std::shared_ptr<GlobalLog> globalLogGetter() noexcept {
     using namespace initialize_implement;
     using namespace std;
-    lock_guard <recursive_mutex> guard(mutex_);
+    lock_guard<recursive_mutex> guard(mutex_);
     if (!logStream_.get()) {
         string logFile("log-");
-        int rank = communicationBackendGetter()->processRank();
+        int rank = communicationBackendGetter()->worldCommunicator()->rank();
         logFile.append(std::to_string(rank)).append(".txt");
-        ofstream *log = new ofstream(logFile);
+        auto *log = new ofstream(logFile);
         function<void()> logStreamDestructor = [log]() {
             log->close();
             delete log;
@@ -41,10 +39,10 @@ std::shared_ptr<GlobalLog> globalLogGetter() {
     return logStream_;
 }
 
-std::shared_ptr<CommunicationBackend> communicationBackendGetter() {
+std::shared_ptr<CommunicationBackend> communicationBackendGetter() noexcept {
     using namespace initialize_implement;
     using namespace std;
-    lock_guard <recursive_mutex> guard(mutex_);
+    lock_guard<recursive_mutex> guard(mutex_);
     if (!mpiBackend_.get()) {
         mpiBackend_.reset(new MPIBackend());
     }
@@ -52,31 +50,24 @@ std::shared_ptr<CommunicationBackend> communicationBackendGetter() {
 }
 
 std::shared_ptr<TensorsCollectiveCommunicateController>
-collectiveCommunicateControllerGetter() {
+collectiveCommunicateControllerGetter() noexcept {
     using namespace initialize_implement;
     using namespace std;
-    lock_guard <recursive_mutex> guard(mutex_);
+    lock_guard<recursive_mutex> guard(mutex_);
     if (!collectiveCommunicateController_.get()) {
         auto backend = communicationBackendGetter();
-
-        GLOBAL_INFO_WITH_THREAD_ID("new RingTokenCommunicateController")
-
-        auto *controller = new rtc::RingTokenCommunicateController(
-                backend,
-                make_shared<rtc::MPIRingTokenCommunication>(mpiBackend_));
-        controller->initialize();
-
-        collectiveCommunicateController_.reset(controller);
-        GLOBAL_INFO_WITH_THREAD_ID("new RingTokenCommunicateController initialized")
+        GLOBAL_INFO_WITH_THREAD_ID("new MPIRingTokenCommunicateController")
+        collectiveCommunicateController_.reset(new rtc::MPIRingTokenCommunicateController());
+        GLOBAL_INFO_WITH_THREAD_ID("new MPIRingTokenCommunicateController initialized")
     }
     return collectiveCommunicateController_;
 }
 
 std::shared_ptr<TensorEnd2EndCommunicateController>
-end2EndCommunicateControllerGetter() {
+end2EndCommunicateControllerGetter() noexcept {
     using namespace initialize_implement;
     using namespace std;
-    lock_guard <recursive_mutex> guard(mutex_);
+    lock_guard<recursive_mutex> guard(mutex_);
     if (!end2EndCommunicateController_.get()) {
         auto backend = communicationBackendGetter();
 
@@ -92,10 +83,10 @@ end2EndCommunicateControllerGetter() {
     return end2EndCommunicateController_;
 }
 
-std::shared_ptr<MessageController> messageControllerGetter() {
+std::shared_ptr<MessageController> messageControllerGetter() noexcept {
     using namespace initialize_implement;
     using namespace std;
-    lock_guard <recursive_mutex> guard(mutex_);
+    lock_guard<recursive_mutex> guard(mutex_);
     if (!mpiMessageController_.get()) {
         auto backend = communicationBackendGetter();
         GLOBAL_INFO_WITH_THREAD_ID("new MPIMessageController")

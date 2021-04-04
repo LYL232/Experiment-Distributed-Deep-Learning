@@ -15,15 +15,13 @@ TensorAllreduceRequest::TensorAllreduceRequest(
         std::shared_ptr<tensorflow::Tensor> requestingTensor,
         std::shared_ptr<tensorflow::Tensor> resultTensor,
         std::function<void(StatusCode)> done,
-        Operation op) :
+        Operation op, std::shared_ptr<Communicator> communicator) :
         TensorCollectiveCommunicateRequest(
-                controller, key, requestingTensor, resultTensor, done
+                controller, key, std::move(requestingTensor),
+                std::move(resultTensor), std::move(done), std::move(communicator)
         ), op_(op) {}
 
-TensorAllreduceRequest::TensorAllreduceRequest(const TensorAllreduceRequest &other) :
-        TensorCollectiveCommunicateRequest(other), op_(other.op_) {}
-
-TensorAllreduceRequest::TensorAllreduceRequest(TensorAllreduceRequest &&other) :
+TensorAllreduceRequest::TensorAllreduceRequest(TensorAllreduceRequest &&other) noexcept:
         TensorCollectiveCommunicateRequest(std::move(other)), op_(other.op_) {}
 
 TensorAllreduceRequest::Operation TensorAllreduceRequest::op() const noexcept {

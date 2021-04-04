@@ -12,7 +12,7 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class TensorAllreduceRequest : public TensorCollectiveCommunicateRequest {
 public:
-    using Operation = CommunicationBackend::AllreduceOperation;
+    using Operation = Communicator::AllreduceOperation;
 
     TensorAllreduceRequest(
             TensorsCollectiveCommunicateController &controller,
@@ -20,18 +20,18 @@ public:
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
             std::shared_ptr<tensorflow::Tensor> resultTensor,
             std::function<void(StatusCode)> done,
-            Operation op
+            Operation op, std::shared_ptr<Communicator> communicator
     );
 
-    TensorAllreduceRequest(const TensorAllreduceRequest &other);
+    TensorAllreduceRequest(const TensorAllreduceRequest &other) = default;
 
-    TensorAllreduceRequest(TensorAllreduceRequest &&other);
+    TensorAllreduceRequest(TensorAllreduceRequest &&other) noexcept;
 
     Operation op() const noexcept;
 
-    virtual StatusCode collectiveCommunicate(const Requests &requests) override;
+    StatusCode collectiveCommunicate(const Requests &requests) override;
 
-    virtual const char *requestTypeName() const noexcept override;
+    const char *requestTypeName() const noexcept override;
 
     static const char *requestType;
 

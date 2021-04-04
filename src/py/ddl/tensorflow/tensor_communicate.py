@@ -1,43 +1,54 @@
-from ddl.tensorflow import Global
+from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow import util
+from ddl.tensorflow.communicator import Communicator
 from tensorflow.python.framework.ops import Tensor
 from collections.abc import Iterable
 import tensorflow as tf
 
 
-def allreduce(tensor: Tensor):
+def allreduce(tensor: Tensor, communicator: Communicator):
     """
     对Tensor进行Allreduce操作
-    :param tensor:
-    :return:
+    :@param tensor:
+    :@param communicator: 进行allreduce操作的通信域
+    :@return:
     """
-    return Global.tf_lib().allreduce(tensor)
+    return CPPBackend.tf_lib().allreduce(
+        tensor, communicator_id=communicator.id)
 
 
-def broadcast(tensor: Tensor, root_rank: int):
+def broadcast(tensor: Tensor, root_rank: int, communicator: Communicator):
     """
     对tensor进行广播操作
-    :param tensor:
-    :param root_rank: 广播根节点
-    :return:
+    :@param tensor:
+    :@param root_rank: 广播根节点
+    :@param communicator: 广播通信域
+    :@return:
     """
-    return Global.tf_lib().broadcast(tensor, root_rank=root_rank)
+    return CPPBackend.tf_lib().broadcast(
+        tensor, root_rank=root_rank, communicator_id=communicator.id
+    )
 
 
 @tf.function
-def broadcast_by_group_eagerly(tensors: Iterable, root_rank):
+def broadcast_by_group_eagerly(
+        tensors: Iterable, root_rank: int,
+        communicator: Communicator):
     for tensor in tensors:
-        tensor.assign(broadcast(tensor, root_rank))
+        tensor.assign(broadcast(tensor, root_rank, communicator))
 
 
-def broadcast_by_group(tensors: Iterable, root_rank):
+def broadcast_by_group(
+        tensors: Iterable, root_rank: int,
+        communicator: Communicator):
     if util.executing_eagerly():
         # Eager mode will parallelize independent control flow
-        return broadcast_by_group_eagerly(tensors, root_rank)
+        return broadcast_by_group_eagerly(tensors, root_rank, communicator)
     else:
         # Graph mode requires an Op
         return tf.group(
-            *[tensor.assign(broadcast(tensor, root_rank)) for tensor in tensors]
+            *[tensor.assign(broadcast(tensor, root_rank, communicator))
+              for tensor in tensors]
         )
 
 
@@ -52,7 +63,7 @@ except AttributeError:
         __global_variables = None
 
 
-def broadcast_global_variables(root_rank: int):
+def broadcast_global_variables(root_rank: int, communicator: Communicator):
     if util.executing_eagerly():
         raise RuntimeError(
             'broadcast_global_variables(root_rank)'
@@ -65,5 +76,5 @@ def broadcast_global_variables(root_rank: int):
             ' tensorflow global variables not found'
         )
     tf.compat.v1.keras.backend.get_session().run(broadcast_by_group(
-        __global_variables(), root_rank
+        __global_variables(), root_rank, communicator
     ))

@@ -21,19 +21,15 @@ Global::Global(
         std::shared_ptr<TensorsCollectiveCommunicateController> collectiveController,
         std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController,
         std::shared_ptr<MessageController> messageController
-) : communicationBackend_(communicationBackend),
-    collectiveCommunicateController_(collectiveController),
-    end2EndCommunicateController_(end2EndController),
-    messageController_(messageController) {}
-
-
-int Global::processes() const noexcept {
-    return communicationBackend_->processes();
+) noexcept: communicationBackend_(std::move(communicationBackend)),
+            collectiveCommunicateController_(std::move(collectiveController)),
+            end2EndCommunicateController_(std::move(end2EndController)),
+            messageController_(std::move(messageController)),
+            communicatorMap_(new std::map<Communicator::ID, std::shared_ptr<Communicator>>()) {
+    const auto &world = communicationBackend_->worldCommunicator();
+    communicatorMap_->emplace(world->id(), world);
 }
 
-int Global::processRank() const noexcept {
-    return communicationBackend_->processRank();
-}
 
 TensorsCollectiveCommunicateController &Global::collectiveCommunicateController() const noexcept {
     return *collectiveCommunicateController_;
@@ -55,6 +51,21 @@ Global &Global::get() noexcept {
     return instance_;
 }
 
-Global::~Global() {}
+std::shared_ptr<Communicator> Global::worldCommunicator() const noexcept {
+    return communicationBackend().worldCommunicator();
+}
+
+const std::shared_ptr<Communicator> &Global::getCommunicator(Communicator::ID id)
+const noexcept {
+    return (*communicatorMap_)[id];
+}
+
+void Global::detachCommunicator(Communicator::ID id) const noexcept {
+    communicatorMap_->erase(id);
+}
+
+Global::~Global() {
+    delete communicatorMap_;
+}
 
 }}}

@@ -6,6 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_SENDTENSOROP_H
 
 #include "tensorflow/core/framework/op_kernel.h"
+#include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -17,6 +18,8 @@ public:
 
 private:
     int receiver_;
+    // 为了方便传通信域对象信息, 所以在op的参数里定义communicator为整数, 其即是一个Communicator对象的指针
+    Communicator::ID communicatorId_;
 };
 
 }}}

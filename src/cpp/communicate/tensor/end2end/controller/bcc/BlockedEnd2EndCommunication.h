@@ -17,7 +17,7 @@ public:
 
     virtual StatusCode receive(const TensorReceiveCommunicateRequest &request) const;
 
-    virtual ~BlockedEnd2EndCommunication() {};
+    virtual ~BlockedEnd2EndCommunication() = default;
 };
 
 }}}}

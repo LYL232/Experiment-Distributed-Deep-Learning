@@ -6,59 +6,29 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATIONBACKEND_H
 
 #include "def.h"
+#include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 class CommunicationBackend {
     friend class Global;
-
-    using uchar = unsigned char;
 public:
-    enum AllreduceOperation : uchar {
-        ALLREDUCE_OP_SUM = 0,
-    };
-
-    CommunicationBackend();
+    CommunicationBackend() = default;
 
     CommunicationBackend(const CommunicationBackend &) = delete;
 
     CommunicationBackend(CommunicationBackend &&) = delete;
 
-    virtual int processes() const;
-
-    virtual int processRank() const;
-
     /**
-     * 全规约通信
-     * @param sendBuffer 传输的数据缓冲
-     * @param recvBuffer 接受的数据缓冲
-     * @param elements 传输的元素个数
-     * @param dtype tensorflow::DataType
-     * @param op 进行的规约运算
-     * @return StatusCode
+     * 包含全部进程的通信域
+     * @return
      */
-    virtual StatusCode allreduce(
-            void *sendBuffer, void *recvBuffer,
-            size_t elements, DataType dtype,
-            AllreduceOperation op) const;
+    virtual std::shared_ptr<Communicator> worldCommunicator() const;
 
-
-    /**
-     * 广播通信
-     * @param buffer 数据缓冲
-     * @param elements 传输的元素个数
-     * @param dtype tensorflow::DataType
-     * @param rootRank 根节点
-     * @return StatusCode
-     */
-    virtual StatusCode broadcast(
-            void *buffer,
-            size_t elements, DataType dtype,
-            int rootRank) const;
-
-    virtual ~CommunicationBackend();
-
-private:
+    virtual ~CommunicationBackend() = default;
+protected:
+    // 初始化时是空指针, 需要子类实现时赋值(reset)
+    static std::shared_ptr<Communicator> world_;
 };
 
 }}}

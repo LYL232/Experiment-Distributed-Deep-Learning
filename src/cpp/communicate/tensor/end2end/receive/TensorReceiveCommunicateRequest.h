@@ -16,16 +16,16 @@ public:
             const std::string &key,
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
             std::function<void(StatusCode)> done,
-            int sender
+            int sender, std::shared_ptr<Communicator> communicator
     );
 
-    TensorReceiveCommunicateRequest(const TensorReceiveCommunicateRequest &other);
+    TensorReceiveCommunicateRequest(const TensorReceiveCommunicateRequest &other) = default;
 
-    TensorReceiveCommunicateRequest(TensorReceiveCommunicateRequest &&other);
+    TensorReceiveCommunicateRequest(TensorReceiveCommunicateRequest &&other) noexcept;
 
     int sender() const noexcept;
 
-    virtual StatusCode end2EndCommunicate() override;
+    StatusCode end2EndCommunicate() override;
 
 private:
     int sender_;

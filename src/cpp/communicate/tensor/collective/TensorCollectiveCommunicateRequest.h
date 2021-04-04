@@ -27,16 +27,18 @@ public:
      * @param requestingTensor 进行请求的Tensor
      * @param resultTensor 该请求返回结果的Tensor
      * @param done 完成时回调函数, 通过此函数通知此请求已经完成
+     * @param communicator 通信域
      */
     TensorCollectiveCommunicateRequest(
             TensorsCollectiveCommunicateController &controller,
             const std::string &key,
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
             std::shared_ptr<tensorflow::Tensor> resultTensor,
-            std::function<void(StatusCode)> done
+            std::function<void(StatusCode)> done,
+            std::shared_ptr<Communicator> communicator
     );
 
-    TensorCollectiveCommunicateRequest(const TensorCollectiveCommunicateRequest &) noexcept;
+    TensorCollectiveCommunicateRequest(const TensorCollectiveCommunicateRequest &) = default;
 
     TensorCollectiveCommunicateRequest(TensorCollectiveCommunicateRequest &&) noexcept;
 
@@ -48,7 +50,8 @@ public:
 
     virtual const char *requestTypeName() const;
 
-    virtual ~TensorCollectiveCommunicateRequest() {};
+    ~TensorCollectiveCommunicateRequest() override = default;
+
 protected:
     TensorsCollectiveCommunicateController &controller_;
 

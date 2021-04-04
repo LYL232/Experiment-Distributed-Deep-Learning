@@ -7,14 +7,11 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-TensorsCollectiveCommunicateController::TensorsCollectiveCommunicateController(
-        std::shared_ptr<CommunicationBackend> backend) : backend_(backend) {};
-
 StatusCode TensorsCollectiveCommunicateController::handleRequest(
-        std::shared_ptr<TensorCollectiveCommunicateRequest>) {
+        const std::shared_ptr<TensorCollectiveCommunicateRequest> &) {
     CALLING_ABSTRACT_INTERFACE_ERROR(
             "TensorsCollectiveCommunicateController::"
-            "handleRequest(std::shared_ptr<TensorCollectiveCommunicateRequest>)");
+            "handleRequest(const std::shared_ptr<TensorCollectiveCommunicateRequest> &)");
 }
 
 StatusCode

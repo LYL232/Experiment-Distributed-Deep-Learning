@@ -7,6 +7,7 @@
 
 #include <memory>
 #include "communicate/backend/mpi/MPIBackend.h"
+#include "communicate/backend/mpi/MPICommunicator.h"
 #include "communicate/tensor/collective/controller/rtc/RingTokenCommunication.h"
 
 
@@ -16,19 +17,19 @@ class MPIRingTokenCommunication : public RingTokenCommunication {
 public:
     typedef std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>> Requests;
 
-    MPIRingTokenCommunication(std::shared_ptr<MPIBackend> backend) noexcept;
+    explicit MPIRingTokenCommunication(std::shared_ptr<Communicator> communicator) noexcept;
 
     MPIRingTokenCommunication(const MPIRingTokenCommunication &) = delete;
 
     MPIRingTokenCommunication(MPIRingTokenCommunication &&) = delete;
 
-    virtual void communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const override;
+    void communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const override;
 
-    virtual std::shared_ptr<Token> communicationReceiveTokenFrom(int sender) const override;
+    std::shared_ptr<Token> communicationReceiveTokenFrom(int sender) const override;
 
-    virtual StatusCode allreduceRequests(const Requests &requests) const override;
+    StatusCode allreduceRequests(const Requests &requests) const override;
 
-    virtual StatusCode broadcastRequests(const Requests &requests) const override;
+    StatusCode broadcastRequests(const Requests &requests) const override;
 
     virtual ~MPIRingTokenCommunication();
 
@@ -39,8 +40,7 @@ private:
             *collectiveCommunicateSendBuffer_, *collectiveCommunicateRecvBuffer_;
     mutable size_t sendBufferSize_, recvBufferSize_,
             collectiveCommunicateBufferSize_, tokenMetaSize_;
-
-    std::shared_ptr<MPIBackend> backend_;
+    const MPICommunicator &mpiCommunicator_;
 
     static double inflateFactor_;
 

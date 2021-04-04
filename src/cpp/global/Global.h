@@ -7,7 +7,10 @@
 
 #include <pthread.h>
 #include <thread>
+#include <communicate/backend/mpi/MPIBackend.h>
+
 #include "global/GlobalLog.h"
+#include "communicate/backend/Communicator.h"
 
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -15,13 +18,18 @@ namespace lyl232 { namespace experiment { namespace ddl {
 class CommunicationBackend;
 
 class TensorsCollectiveCommunicateController;
+
 class TensorEnd2EndCommunicateController;
+
 class MessageController;
 
 /**
  * 单例模式: 全局对象类
  */
 class Global {
+    // 开放communicatorMap_的访问权限给Communicator类, 主要用于分割通信域时能够注册分割出的通信域的ID
+    friend class Communicator;
+
 public:
     Global() = delete;
 
@@ -29,9 +37,7 @@ public:
 
     Global(Global &&) = delete;
 
-    int processes() const noexcept;
-
-    int processRank() const noexcept;
+    std::shared_ptr<Communicator> worldCommunicator() const noexcept;
 
     CommunicationBackend &communicationBackend() const noexcept;
 
@@ -40,6 +46,15 @@ public:
     TensorEnd2EndCommunicateController &end2EndCommunicateController() const noexcept;
 
     MessageController &messageController() const noexcept;
+
+    const std::shared_ptr<Communicator> &getCommunicator(Communicator::ID) const noexcept;
+
+    /**
+     * python端不再需要一个通信域对象时调用的方法, 这将会导致communicatorMap_内的shared_ptr被析构,
+     * 不再保持这个通信域
+     * @param id
+     */
+    void detachCommunicator(Communicator::ID id) const noexcept;
 
     ~Global();
 
@@ -53,7 +68,7 @@ private:
             std::shared_ptr<TensorsCollectiveCommunicateController> collectiveController,
             std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController,
             std::shared_ptr<MessageController> messageController
-    );
+    ) noexcept;
 
     mutable std::shared_ptr<CommunicationBackend> communicationBackend_;
     mutable std::shared_ptr<TensorsCollectiveCommunicateController>
@@ -61,6 +76,10 @@ private:
     mutable std::shared_ptr<TensorEnd2EndCommunicateController>
             end2EndCommunicateController_;
     mutable std::shared_ptr<MessageController> messageController_;
+
+    // 这个map设计成指针是因为这个map的析构可能在communicationBackend_之后, 这样如果
+    // Communicator被析构可能会出异常, 设计成指针就可以控制其何时被析构
+    mutable std::map<Communicator::ID, std::shared_ptr<Communicator>> *communicatorMap_;
 
     static Global instance_;
 };

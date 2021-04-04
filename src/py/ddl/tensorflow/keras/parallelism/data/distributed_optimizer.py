@@ -1,4 +1,6 @@
-from ddl.tensorflow import Global, util, communicate
+from ddl.tensorflow import util
+from ddl.tensorflow.tensor_communicate import allreduce
+from ddl.tensorflow.communicator import Communicator
 from tensorflow.keras.optimizers import Optimizer
 from abc import ABC
 import tensorflow as tf
@@ -15,10 +17,12 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
                       f'{self.__class__.__base__.__name__}'
 
         super(self.__class__, self).__init__(**kwargs)
+        self.__gradients_allreduced = False
+        self.communicator: Communicator = Communicator.world()
 
     def get_gradients(self, loss, params):
         return self.__allreduce(
-            super(self.__class__, self).get_gradients(loss, params)
+            self.original_get_gradients(loss, params)
         )
 
     def _aggregate_gradients(self, grads_and_vars):
@@ -39,13 +43,23 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
         return results
 
     def __allreduce(self, grads):
+        from ddl.log import info
+
+        if self.__gradients_allreduced:
+            return grads
+
+        info('allreduce grads')
+
         def allreduce_grads():
             with tf.name_scope(self.__name + "Allreduce"):
                 return [
                     tf.cond(
-                        tf.convert_to_tensor(Global.processes() > 1),
-                        lambda: communicate.allreduce(grad),
-                        lambda: grad
+                        tf.convert_to_tensor(
+                            self.communicator.size > 1
+                        ),
+                        lambda: allreduce(grad, self.communicator),
+                        lambda: grad,
+                        name='if-do-allreduce'
                     )
                     if grad is not None else grad
                     for grad in grads
@@ -57,9 +71,44 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
         self.__gradients_allreduced = True
         return allreduce_grads()
 
+    @property
+    def is_distributed_optimizer(self) -> bool:
+        """
+        用来判断是否是分布式优化器
+        @return:
+        """
+        return True
 
-def data_parallelism_distributed_optimizer_wrapper(optimizer: Optimizer):
-    cls = type(optimizer.__class__.__name__, (optimizer.__class__,),
+    def original_get_gradients(self, loss, params):
+        """
+        返回原本优化器被复写的get_gradients方法
+        @param loss:
+        @param params:
+        @return:
+        """
+        return super(self.__class__, self).get_gradients(loss, params)
+
+    def original_aggregate_gradients(self, grads_and_vars):
+        """
+        返回原本优化器被复写的_aggregate_gradients方法
+        @param grads_and_vars:
+        @return:
+        """
+        return super(self.__class__, self)._aggregate_gradients(grads_and_vars)
+
+
+def data_parallelism_distributed_optimizer_wrapper(
+        optimizer: Optimizer,
+        communicator: Communicator = Communicator.world()) -> Optimizer:
+    opt_cls = optimizer.__class__
+    assert issubclass(opt_cls, Optimizer)
+    cls = type(optimizer.__class__.__name__, (opt_cls,),
                dict(DataParallelismDistributedOptimizer.__dict__))
     assert issubclass(cls, Optimizer)
-    return cls.from_config(optimizer.get_config())
+    config = optimizer.get_config()
+
+    res = cls.from_config(config)
+
+    res.communicator = communicator
+
+    return res

@@ -18,16 +18,16 @@ public:
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
             std::shared_ptr<tensorflow::Tensor> resultTensor,
             std::function<void(StatusCode)> done,
-            int rootRank
+            int rootRank, std::shared_ptr<Communicator> communicator
     );
 
-    TensorBroadcastRequest(const TensorBroadcastRequest &other);
+    TensorBroadcastRequest(const TensorBroadcastRequest &other) = default;
 
-    TensorBroadcastRequest(TensorBroadcastRequest &&other);
+    TensorBroadcastRequest(TensorBroadcastRequest &&other) noexcept ;
 
-    virtual StatusCode collectiveCommunicate(const Requests &requests) override;
+    StatusCode collectiveCommunicate(const Requests &requests) override;
 
-    virtual const char *requestTypeName() const noexcept override;
+    const char *requestTypeName() const noexcept override;
 
     int rootRank() const noexcept;
 
@@ -35,8 +35,6 @@ public:
 
 private:
     int rootRank_;
-
-
 };
 
 }}}

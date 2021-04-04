@@ -41,13 +41,14 @@ verbose = True
 def main():
     from ddl.examples.keras_pipeline_mpi.rank0 import main as main_0
     from ddl.examples.keras_pipeline_mpi.rank1 import main as main_1
-    from ddl.tensorflow.global_class import Global
-    if Global.process_rank() == 0:
+    from ddl.tensorflow.communicator import Communicator
+    world = Communicator.world()
+    if world.rank == 0:
         main_0()
-    elif Global.process_rank() == 1:
+    elif world.rank == 1:
         main_1()
     else:
-        raise Exception(f'unexpected rank: {Global.process_rank()}')
+        raise Exception(f'unexpected rank: {world.rank}')
 
 
 if __name__ == '__main__':

@@ -7,12 +7,16 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-void MessageController::sendMessage(const Message &message, int receiver) {
-    CALLING_ABSTRACT_INTERFACE_ERROR("MessageController::sendMessage(const Message &message, int receiver)");
+void MessageController::sendMessage(
+        const Message &message, int receiver,
+        const std::shared_ptr<Communicator> &communicator) {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "MessageController::sendMessage(const Message &message, int receiver),"
+            " const Message &message, int receiver, const std::shared_ptr<Communicator> &communicator");
 }
 
-Message* MessageController::listen() {
-    CALLING_ABSTRACT_INTERFACE_ERROR("MessageController::listen()");
+Message *MessageController::listen(const Communicator &communicator) {
+    CALLING_ABSTRACT_INTERFACE_ERROR("MessageController::listen(const Communicator &communicator)");
 }
 
 }}}

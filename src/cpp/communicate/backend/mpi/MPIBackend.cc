@@ -7,14 +7,13 @@
 #include <iostream>
 #include "global/Global.h"
 #include "communicate/backend/mpi/MPIBackend.h"
+#include "communicate/backend/mpi/MPICommunicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 std::mutex MPIBackend::mutex_;
 bool MPIBackend::initialized_ = false;
 bool MPIBackend::finalized_ = false;
-int MPIBackend::processes_ = -1;
-int MPIBackend::processRank_ = -1;
 int MPIBackend::refs_ = 0;
 
 
@@ -43,35 +42,6 @@ MPIBackend::~MPIBackend() {
     }
 }
 
-StatusCode MPIBackend::allreduce(
-        void *sendBuffer, void *recvBuffer,
-        size_t elements, DataType dtype,
-        AllreduceOperation op) const {
-    MPI_Allreduce(
-            sendBuffer, recvBuffer,
-            (int) elements,
-            DataType2MPIType(dtype),
-            AllreduceOperation2MPIOp(op),
-            MPI_COMM_WORLD
-    );
-    // todo: status check
-    return STATUS_OK;
-}
-
-StatusCode MPIBackend::broadcast(
-        void *buffer, size_t elements, DataType dtype,
-        int rootRank) const {
-    MPI_Bcast(
-            buffer,
-            (int) elements,
-            DataType2MPIType(dtype),
-            rootRank,
-            MPI_COMM_WORLD
-    );
-    // todo: status check
-    return STATUS_OK;
-}
-
 MPI_Datatype MPIBackend::DataType2MPIType(DataType dtype) noexcept {
     using namespace tensorflow;
     switch (dtype) {
@@ -90,28 +60,13 @@ MPI_Datatype MPIBackend::DataType2MPIType(DataType dtype) noexcept {
     return MPI_DATATYPE_NULL;
 }
 
-MPI_Op MPIBackend::AllreduceOperation2MPIOp(AllreduceOperation op) noexcept {
-    switch (op) {
-        case CommunicationBackend::ALLREDUCE_OP_SUM:
-            return MPI_SUM;
-    }
-    return MPI_OP_NULL;
-}
 
-int MPIBackend::processesImpl_(int *argc, char ***argv) {
+std::shared_ptr<Communicator> MPIBackend::worldGetter_(int *argc, char ***argv) {
     std::lock_guard<std::mutex> guard(mutex_);
     if (!initialized_) {
         initialize_(argc, argv);
     }
-    return processes_;
-}
-
-int MPIBackend::processRankImpl_(int *argc, char ***argv) {
-    std::lock_guard<std::mutex> guard(mutex_);
-    if (!initialized_) {
-        initialize_(argc, argv);
-    }
-    return processRank_;
+    return world_;
 }
 
 void MPIBackend::initialize_(int *argc, char ***argv) {
@@ -123,18 +78,21 @@ void MPIBackend::initialize_(int *argc, char ***argv) {
                 "environment dose not provide MPI_THREAD_MULTIPLE requirement"
         );
     }
-    MPI_Comm_size(MPI_COMM_WORLD, &processes_);
-    MPI_Comm_rank(MPI_COMM_WORLD, &processRank_);
+    auto *copiedWorld = new MPI_Comm(MPI_COMM_WORLD);
+    int rank, size;
+    MPI_Comm_rank(*copiedWorld, &rank);
+    MPI_Comm_size(*copiedWorld, &size);
+    world_.reset(new MPICommunicator(
+            std::shared_ptr<MPI_Comm>(copiedWorld),
+            rank, size
+    ));
     initialized_ = true;
 }
 
-int MPIBackend::processes() const {
-    return processesImpl_(nullptr, nullptr);
+std::shared_ptr<Communicator> MPIBackend::worldCommunicator() const noexcept {
+    return worldGetter_(nullptr, nullptr);
 }
 
-int MPIBackend::processRank() const {
-    return processRankImpl_(nullptr, nullptr);
-}
 
 }}}
 

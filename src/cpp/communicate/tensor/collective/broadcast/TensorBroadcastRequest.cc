@@ -15,17 +15,14 @@ TensorBroadcastRequest::TensorBroadcastRequest(
         std::shared_ptr<tensorflow::Tensor> requestingTensor,
         std::shared_ptr<tensorflow::Tensor> resultTensor,
         std::function<void(StatusCode)> done,
-        int rootRank) :
+        int rootRank, std::shared_ptr<Communicator> communicator) :
         TensorCollectiveCommunicateRequest(
-                controller, key, requestingTensor, resultTensor, done
-        ), rootRank_(rootRank) {}
+                controller, key, std::move(requestingTensor), std::move(resultTensor),
+                std::move(done), std::move(communicator)), rootRank_(rootRank) {}
 
-TensorBroadcastRequest::TensorBroadcastRequest(const TensorBroadcastRequest &other) :
-        TensorCollectiveCommunicateRequest(other) {}
 
-TensorBroadcastRequest::TensorBroadcastRequest(TensorBroadcastRequest &&other) :
-        TensorCollectiveCommunicateRequest(std::move(other)) {
-}
+TensorBroadcastRequest::TensorBroadcastRequest(TensorBroadcastRequest &&other) noexcept:
+        TensorCollectiveCommunicateRequest(std::move(other)), rootRank_(other.rootRank_) {}
 
 StatusCode TensorBroadcastRequest::collectiveCommunicate(const Requests &requests) {
     return controller_.broadcast(requests);

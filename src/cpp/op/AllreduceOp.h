@@ -11,10 +11,13 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class AllreduceOp : public tensorflow::AsyncOpKernel {
 public:
-    explicit AllreduceOp(tensorflow::OpKernelConstruction *context) :
-            AsyncOpKernel(context) {}
+    explicit AllreduceOp(tensorflow::OpKernelConstruction *context);
 
     void ComputeAsync(tensorflow::OpKernelContext *context, DoneCallback done) override;
+
+private:
+    // 为了方便传通信域对象信息, 所以在op的参数里定义communicator为整数, 其即是一个Communicator对象的指针
+    Communicator::ID communicatorId_;
 };
 
 }}}

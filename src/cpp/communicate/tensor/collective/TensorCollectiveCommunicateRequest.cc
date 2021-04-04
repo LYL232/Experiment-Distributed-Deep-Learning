@@ -12,15 +12,12 @@ TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(
         const std::string &key,
         std::shared_ptr<tensorflow::Tensor> requestingTensor,
         std::shared_ptr<tensorflow::Tensor> resultTensor,
-        std::function<void(StatusCode)> done)
-        : TensorCommunicateRequest(key, requestingTensor, done),
-          controller_(controller), resultTensor_(resultTensor) {
+        std::function<void(StatusCode)> done,
+        std::shared_ptr<Communicator> communicator)
+        : TensorCommunicateRequest(
+                key, std::move(requestingTensor), std::move(done), std::move(communicator)),
+          controller_(controller), resultTensor_(std::move(resultTensor)) {
 }
-
-TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(
-        const TensorCollectiveCommunicateRequest &other) noexcept
-        : TensorCommunicateRequest(other),
-          controller_(other.controller_), resultTensor_(other.resultTensor_) {}
 
 TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(
         TensorCollectiveCommunicateRequest &&other) noexcept

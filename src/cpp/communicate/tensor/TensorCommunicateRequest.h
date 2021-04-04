@@ -7,6 +7,7 @@
 
 #include <memory>
 #include "def.h"
+#include "communicate/backend/Communicator.h"
 #include "tensorflow/core/framework/tensor.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -21,12 +22,13 @@ public:
      * @param done 完成时回调函数, 通过此函数通知此请求已经完成
      */
     TensorCommunicateRequest(
-            const std::string &key,
+            std::string key,
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
-            std::function<void(StatusCode)> done
+            std::function<void(StatusCode)> done,
+            std::shared_ptr<Communicator> communicator
     );
 
-    TensorCommunicateRequest(const TensorCommunicateRequest &) noexcept;
+    TensorCommunicateRequest(const TensorCommunicateRequest &) noexcept = default;
 
     TensorCommunicateRequest(TensorCommunicateRequest &&) noexcept;
 
@@ -44,11 +46,15 @@ public:
 
     void *requestingTensorData() const noexcept;
 
-    virtual ~TensorCommunicateRequest() {};
+    const std::shared_ptr<Communicator> &communicator() const noexcept;
+
+    virtual ~TensorCommunicateRequest() = default;
+
 private:
     std::string key_;
     mutable std::shared_ptr<tensorflow::Tensor> requestingTensor_;
     std::function<void(StatusCode)> done_;
+    std::shared_ptr<Communicator> communicator_;
 };
 
 }}}

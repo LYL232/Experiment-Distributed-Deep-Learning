@@ -12,17 +12,15 @@ TensorReceiveCommunicateRequest::TensorReceiveCommunicateRequest(
         TensorEnd2EndCommunicateController &controller,
         const std::string &key,
         std::shared_ptr<tensorflow::Tensor> requestingTensor,
-        std::function<void(StatusCode)> done, int sender) :
-        TensorEnd2EndCommunicateRequest(controller, key, requestingTensor, done),
-        sender_(sender) {}
+        std::function<void(StatusCode)> done, int sender,
+        std::shared_ptr<Communicator> communicator) :
+        TensorEnd2EndCommunicateRequest(
+                controller, key, std::move(requestingTensor),
+                std::move(done), std::move(communicator)), sender_(sender) {}
 
 TensorReceiveCommunicateRequest::TensorReceiveCommunicateRequest(
-        const TensorReceiveCommunicateRequest &other) :
-        TensorEnd2EndCommunicateRequest(other), sender_(other.sender_) {}
-
-TensorReceiveCommunicateRequest::TensorReceiveCommunicateRequest(
-        TensorReceiveCommunicateRequest &&other) :
-        TensorEnd2EndCommunicateRequest(other), sender_(other.sender_) {}
+        TensorReceiveCommunicateRequest &&other) noexcept:
+        TensorEnd2EndCommunicateRequest(std::move(other)), sender_(other.sender_) {}
 
 int TensorReceiveCommunicateRequest::sender() const noexcept {
     return sender_;

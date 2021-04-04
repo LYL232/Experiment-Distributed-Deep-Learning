@@ -15,17 +15,17 @@ namespace lyl232 { namespace experiment { namespace ddl { namespace bcc {
 class MPIBlockedEnd2EndCommunication : public BlockedEnd2EndCommunication {
 public:
 
-    MPIBlockedEnd2EndCommunication(std::shared_ptr<MPIBackend> backend);
+    explicit MPIBlockedEnd2EndCommunication(std::shared_ptr<MPIBackend> backend);
 
     MPIBlockedEnd2EndCommunication(const MPIBlockedEnd2EndCommunication &) = delete;
 
     MPIBlockedEnd2EndCommunication(MPIBlockedEnd2EndCommunication &&) = delete;
 
-    virtual StatusCode send(const TensorSendCommunicateRequest &request) const;
+    StatusCode send(const TensorSendCommunicateRequest &request) const override;
 
-    virtual StatusCode receive(const TensorReceiveCommunicateRequest &request) const;
+    StatusCode receive(const TensorReceiveCommunicateRequest &request) const override;
 
-    virtual ~MPIBlockedEnd2EndCommunication();
+    ~MPIBlockedEnd2EndCommunication() override;
 
 private:
     mutable char *sendBuffer_, *receiveBuffer_;

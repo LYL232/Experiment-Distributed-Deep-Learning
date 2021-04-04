@@ -13,25 +13,22 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class TensorsCollectiveCommunicateController {
 public:
-    using AllreduceOperation = CommunicationBackend::AllreduceOperation;
+    using AllreduceOperation = Communicator::AllreduceOperation;
     using Requests = TensorCollectiveCommunicateRequest::Requests;
 
-    TensorsCollectiveCommunicateController(std::shared_ptr<CommunicationBackend> backend);
+    TensorsCollectiveCommunicateController() = default;
 
     TensorsCollectiveCommunicateController(const TensorsCollectiveCommunicateController &) = delete;
 
     TensorsCollectiveCommunicateController(TensorsCollectiveCommunicateController &&) = delete;
 
-    virtual StatusCode handleRequest(std::shared_ptr<TensorCollectiveCommunicateRequest>);
+    virtual StatusCode handleRequest(const std::shared_ptr<TensorCollectiveCommunicateRequest> &);
 
     virtual StatusCode allreduce(const Requests &requests);
 
     virtual StatusCode broadcast(const Requests &requests);
 
-    virtual ~TensorsCollectiveCommunicateController() {};
-
-protected:
-    std::shared_ptr<CommunicationBackend> backend_;
+    virtual ~TensorsCollectiveCommunicateController() = default;
 };
 
 }}}

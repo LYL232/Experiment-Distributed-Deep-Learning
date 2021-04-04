@@ -19,15 +19,18 @@ REGISTER_OP("ForwardAndSend")
         .Input("send: T")
         .Attr("receiver: int")
         .Attr("msg: string")
+        .Attr("communicator_id: int")
         .Output("forwarded: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
             return tensorflow::Status::OK();
         });
 
-ForwardAndSendOp::ForwardAndSendOp(tensorflow::OpKernelConstruction *context) : AsyncOpKernel(context) {
+ForwardAndSendOp::ForwardAndSendOp(tensorflow::OpKernelConstruction *context) :
+        AsyncOpKernel(context), receiver_(-1), communicatoId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("receiver", &receiver_));
     OP_REQUIRES_OK(context, context->GetAttr("msg", &msg_));
+    OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatoId_));
 }
 
 void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
@@ -43,8 +46,11 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
     }
 
     auto &global = Global::get();
+    const auto &commPtr = global.getCommunicator(communicatoId_);
 
-    global.messageController().sendMessage(Message(msg_.c_str(), global.processRank()), receiver_);
+    global.messageController().sendMessage(
+            Message(msg_.c_str(), commPtr->rank(), msg_.length()),
+            receiver_, commPtr);
 
     global.end2EndCommunicateController().handleRequest(
             make_shared<TensorSendCommunicateRequest>(
@@ -55,7 +61,7 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
                         context->SetStatus(statusCode2TFStatus(code));
                         done();
                     },
-                    receiver_
+                    receiver_, commPtr
             )
     );
 }

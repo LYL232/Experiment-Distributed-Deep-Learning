@@ -14,6 +14,7 @@ using namespace tensorflow;
 
 REGISTER_OP("Broadcast")
         .Attr("T: {int32, int64, float32, float64}")
+        .Attr("communicator_id: int")
         .Attr("root_rank: int")
         .Input("tensor: T")
         .Output("broadcasted: T")
@@ -22,8 +23,10 @@ REGISTER_OP("Broadcast")
             return tensorflow::Status::OK();
         });
 
-BroadcastOp::BroadcastOp(tensorflow::OpKernelConstruction *context) : AsyncOpKernel(context) {
+BroadcastOp::BroadcastOp(tensorflow::OpKernelConstruction *context) :
+        AsyncOpKernel(context), rootRank_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("root_rank", &rootRank_));
+    OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
 }
 
 void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
@@ -37,7 +40,8 @@ void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
             context, context->allocate_output(0, input.shape(), &output), done
     );
 
-    auto &controller = Global::get().collectiveCommunicateController();
+    auto &global = Global::get();
+    auto &controller = global.collectiveCommunicateController();
 
     OP_REQUIRES_OK_ASYNC(context, statusCode2TFStatus(
             controller.handleRequest(
@@ -50,7 +54,7 @@ void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
                                 context->SetStatus(statusCode2TFStatus(code));
                                 done();
                             },
-                            rootRank_
+                            rootRank_, global.getCommunicator(communicatorId_)
                     )
             )), done);
 }

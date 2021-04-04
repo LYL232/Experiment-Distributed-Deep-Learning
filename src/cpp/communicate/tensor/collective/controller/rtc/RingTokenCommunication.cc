@@ -6,9 +6,11 @@
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 
+RingTokenCommunication::RingTokenCommunication(std::shared_ptr<Communicator> communicator) :
+        communicator_(std::move(communicator)) {}
+
 void
-RingTokenCommunication::communicationSendTokenTo(
-        int receiver, const std::shared_ptr<Token> &token) const {
+RingTokenCommunication::communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const {
     CALLING_ABSTRACT_INTERFACE_ERROR(
             "RingTokenCommunication::communicationSendTokenTo"
             "(int receiver, const std::shared_ptr<Token> &token)");
@@ -37,5 +39,6 @@ RingTokenCommunication::broadcastRequests(const Requests &requests) const {
             " &requests)"
     );
 }
+
 
 }}}}

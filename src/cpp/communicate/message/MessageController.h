@@ -7,14 +7,15 @@
 
 #include <memory>
 #include "communicate/message/message.h"
+#include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 class MessageController {
 public:
-    virtual void sendMessage(const Message &message, int receiver);
+    virtual void sendMessage(const Message &message, int receiver, const std::shared_ptr<Communicator> &communicator);
 
-    virtual Message *listen();
+    virtual Message *listen(const Communicator &communicator);
 };
 
 }}}

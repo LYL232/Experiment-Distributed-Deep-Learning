@@ -5,6 +5,7 @@
 #include "mpi.h"
 #include "global/Global.h"
 #include "communicate/tensor/end2end/controller/bcc/mpi/MPIBlockedEnd2EndCommunication.h"
+#include "communicate/backend/mpi/MPICommunicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace bcc {
 
@@ -14,7 +15,7 @@ MPIBlockedEnd2EndCommunication::MPIBlockedEnd2EndCommunication(
         std::shared_ptr<MPIBackend> backend) :
         sendBuffer_(nullptr), receiveBuffer_(nullptr),
         sendBufferSize_(0), receiveBufferSize_(0),
-        backend_(backend), statusBuffer_(),
+        backend_(std::move(backend)), statusBuffer_(),
         sendMutex_(PTHREAD_MUTEX_INITIALIZER),
         receiveMutex_(PTHREAD_MUTEX_INITIALIZER) {}
 
@@ -31,13 +32,15 @@ StatusCode MPIBlockedEnd2EndCommunication::send(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sending tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
+    const auto &communicator = dynamic_cast<const MPICommunicator&>(*request.communicator());
+
     MPI_Send(
             sendBuffer_,
             request.elements(),
             MPIBackend::DataType2MPIType(request.dtype()),
             request.receiver(),
             MPIBackend::MPI_TAG_BCC_COMMUNICATE,
-            MPI_COMM_WORLD
+            communicator.mpiComm()
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sent tensor: " << request.key() << " to rank: " << request.receiver())
@@ -55,13 +58,14 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("mpi receiving Tensor: " << request.key())
 #endif
+    const auto &communicator = dynamic_cast<const MPICommunicator&>(*request.communicator());
     MPI_Recv(
             receiveBuffer_,
             request.elements(),
             MPIBackend::DataType2MPIType(request.dtype()),
             request.sender(),
             MPIBackend::MPI_TAG_BCC_COMMUNICATE,
-            MPI_COMM_WORLD,
+            communicator.mpiComm(),
             &statusBuffer_
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL

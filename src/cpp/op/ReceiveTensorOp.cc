@@ -15,14 +15,17 @@ REGISTER_OP("ReceiveTensor")
         .Attr("T: {int32, int64, float32, float64}")
         .Input("input: T")
         .Attr("sender: int")
+        .Attr("communicator_id: int")
         .Output("received: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
             return tensorflow::Status::OK();
         });
 
-ReceiveTensorOp::ReceiveTensorOp(tensorflow::OpKernelConstruction *context) : AsyncOpKernel(context) {
+ReceiveTensorOp::ReceiveTensorOp(tensorflow::OpKernelConstruction *context) :
+        AsyncOpKernel(context), sender_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("sender", &sender_));
+    OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
 }
 
 void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
@@ -47,7 +50,7 @@ void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) 
                         context->SetStatus(statusCode2TFStatus(code));
                         done();
                     },
-                    sender_
+                    sender_, global.getCommunicator(communicatorId_)
             )
     );
 }

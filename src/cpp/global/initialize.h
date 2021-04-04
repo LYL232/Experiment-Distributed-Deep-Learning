@@ -13,15 +13,15 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-std::shared_ptr<GlobalLog> globalLogGetter();
+std::shared_ptr<GlobalLog> globalLogGetter() noexcept;
 
-std::shared_ptr<CommunicationBackend> communicationBackendGetter();
+std::shared_ptr<CommunicationBackend> communicationBackendGetter() noexcept;
 
-std::shared_ptr<TensorsCollectiveCommunicateController> collectiveCommunicateControllerGetter();
+std::shared_ptr<TensorsCollectiveCommunicateController> collectiveCommunicateControllerGetter() noexcept;
 
-std::shared_ptr<TensorEnd2EndCommunicateController> end2EndCommunicateControllerGetter();
+std::shared_ptr<TensorEnd2EndCommunicateController> end2EndCommunicateControllerGetter() noexcept;
 
-std::shared_ptr<MessageController> messageControllerGetter();
+std::shared_ptr<MessageController> messageControllerGetter() noexcept;
 
 
 }}}

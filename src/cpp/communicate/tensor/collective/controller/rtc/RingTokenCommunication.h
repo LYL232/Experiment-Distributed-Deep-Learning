@@ -14,6 +14,8 @@ namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 
 class RingTokenCommunication {
 public:
+    explicit RingTokenCommunication(std::shared_ptr<Communicator> communicator);
+
     using Requests = TensorCollectiveCommunicateRequest::Requests;
 
     virtual void communicationSendTokenTo(int receiver, const std::shared_ptr<Token> &token) const;
@@ -23,6 +25,9 @@ public:
     virtual StatusCode allreduceRequests(const Requests &requests) const;
 
     virtual StatusCode broadcastRequests(const Requests &requests) const;
+
+protected:
+    std::shared_ptr<Communicator> communicator_;
 };
 
 

@@ -5,6 +5,7 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIMESSAGECONTROLLER_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MPIMESSAGECONTROLLER_H
 
+#include "pthread.h"
 #include "communicate/backend/mpi/MPIBackend.h"
 #include "communicate/message/MessageController.h"
 
@@ -12,15 +13,18 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class MPIMessageController : public MessageController {
 public:
-    MPIMessageController(std::shared_ptr<MPIBackend> backend);
+    explicit MPIMessageController(std::shared_ptr<MPIBackend> backend);
 
-    void sendMessage(const Message &message, int receiver) override;
+    void sendMessage(const Message &message, int receiver,
+                     const std::shared_ptr<Communicator> &communicator) override;
 
-    Message* listen() override;
+    Message *listen(const Communicator &communicator) override;
 
     ~MPIMessageController();
 
 private:
+    pthread_mutex_t mutex_;
+
     std::shared_ptr<MPIBackend> backend_;
 
     char *buffer_;

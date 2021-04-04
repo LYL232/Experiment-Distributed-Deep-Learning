@@ -15,19 +15,19 @@ public:
     BlockedEnd2EndCommunicateController(
             std::shared_ptr<CommunicationBackend> backend,
             std::shared_ptr<BlockedEnd2EndCommunication> communication
-            );
+    );
 
     BlockedEnd2EndCommunicateController(const BlockedEnd2EndCommunicateController &) = delete;
 
     BlockedEnd2EndCommunicateController(BlockedEnd2EndCommunicateController &&) = delete;
 
-    virtual StatusCode handleRequest(std::shared_ptr<TensorEnd2EndCommunicateRequest> request) override;
+    StatusCode handleRequest(const std::shared_ptr<TensorEnd2EndCommunicateRequest> &request) override;
 
-    virtual StatusCode send(const TensorSendCommunicateRequest &request) override;
+    StatusCode send(const TensorSendCommunicateRequest &request) override;
 
-    virtual StatusCode receive(const TensorReceiveCommunicateRequest &request) override;
+    StatusCode receive(const TensorReceiveCommunicateRequest &request) override;
 
-    virtual ~BlockedEnd2EndCommunicateController() {};
+    ~BlockedEnd2EndCommunicateController() override = default;
 private:
     std::shared_ptr<BlockedEnd2EndCommunication> communicationImpl_;
 };

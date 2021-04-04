@@ -17,12 +17,13 @@ public:
             TensorEnd2EndCommunicateController &controller,
             const std::string &key,
             std::shared_ptr<tensorflow::Tensor> requestingTensor,
-            std::function<void(StatusCode)> done
+            std::function<void(StatusCode)> done,
+            std::shared_ptr<Communicator> communicator
     );
 
-    TensorEnd2EndCommunicateRequest(const TensorEnd2EndCommunicateRequest &other);
+    TensorEnd2EndCommunicateRequest(const TensorEnd2EndCommunicateRequest &other) = default;
 
-    TensorEnd2EndCommunicateRequest(TensorEnd2EndCommunicateRequest &&other);
+    TensorEnd2EndCommunicateRequest(TensorEnd2EndCommunicateRequest &&other) noexcept ;
 
     virtual StatusCode end2EndCommunicate();
 
