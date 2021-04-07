@@ -1,1 +1,1 @@
-from .layer import PipelineLayer, DensePipelineInputLayer
+from .layer import PipelineLayer, PipelineInputLayer

@@ -1,8 +1,8 @@
-from tensorflow.keras.layers import Dense, Layer
-from tensorflow.python.framework.ops import Tensor, RegisterGradient
-# noinspection PyProtectedMember
-from tensorflow.python.ops.nn_grad import _BiasAddGrad
+from tensorflow.keras.layers import Layer
 from ddl.tensorflow.communicator import Communicator
+from ddl.tensorflow.cpp_backend import CPPBackend
+from ddl.tensorflow.keras.parallelism.pipeline.training_stage \
+    import BaseTrainingStage
 import tensorflow as tf
 import abc
 import json
@@ -47,70 +47,53 @@ class PipelineLayer(Layer, metaclass=abc.ABCMeta):
         @param pipeline_model: 即将编译完成的PipelineModel
         @return: None
         """
-        self.__previous_stage_rank = pipeline_model.pipeline_communicator.rank - 1
+        self.__previous_stage_rank = \
+            pipeline_model.pipeline_communicator.rank - 1
         self.__communicator = pipeline_model.pipeline_communicator
         self.__compiled = True
 
 
-class DensePipelineInputLayer(Dense, PipelineLayer):
-    """
-    分布式流水线并行中向上一层中进行误差后向传播的全连接层
-    """
+class PipelineInputLayer(PipelineLayer):
+    def __init__(self, input_shape: tuple, name: str = None, **kwargs):
+        kwargs.pop('trainable', None)
+        super().__init__(
+            input_shape=input_shape, trainable=True, name=name, **kwargs
+        )
 
-    def __init__(
-            self, units, activation=None,
-            kernel_initializer='glorot_uniform', bias_initializer='zeros',
-            kernel_regularizer=None, bias_regularizer=None,
-            activity_regularizer=None, kernel_constraint=None,
-            bias_constraint=None,
-            **kwargs):
-        """
-        @param 见Dense的文档
-        """
-        Dense.__init__(
-            self, units, activation, True, kernel_initializer,
-            bias_initializer, kernel_regularizer,
-            bias_regularizer, activity_regularizer,
-            kernel_constraint, bias_constraint, **kwargs)
-        PipelineLayer.__init__(self, **kwargs)
+        self.__shape = input_shape
 
-    def call(self, inputs):
-        """
-        替换原有的偏置加法OP, 让其正常完成加添置的同时, 将批次内的所有样例的偏差传递到上一个节点
-        @param inputs: 见父类文档
-        @return: 见父类文档
-        """
-
-        # 以下代码要求单例, 因为不允许注册相同名字的梯度
-        @RegisterGradient('DenseForwardAndSendGrad')
-        def dense_forward_and_send_grad(op, received_grad: Tensor):
+        @tf.custom_gradient
+        def input_grad(x, _):
             """
-            替换原有OP, 将其传给ForwardAndSendOp, 将上一阶段
-            @param op: _BiasAddGrad的第一函数参数
-            @param received_grad: 偏置应收到的每个样例产生的梯度
-            @return: _BiasAddGrad returns
+            输入层的梯度, 因为一般情况下是不计算输入层的梯度的, 所以需要一个Variable去欺骗
+            tensorflow这里有需要计算的梯度, 这个自定义梯度就是为了获取输入层的梯度
+            @param x: 输入层的输入tensor
+            @param _: 无用的变量输入, 不需要使用, 只是为了欺骗tensorflow这里有梯度要计算
+            @return:
             """
-            from ddl.tensorflow.cpp_backend import CPPBackend
-            from ddl.tensorflow.keras.parallelism.pipeline.training_stage \
-                import BaseTrainingStage
-            # 需要进行一次矩阵乘法
-            last_stage_errors = tf.transpose(tf.matmul(
-                self.kernel,
-                tf.transpose(received_grad)
-            ))
 
-            received_grad = CPPBackend.tf_lib().forward_and_send(
-                received_grad, last_stage_errors,
-                receiver=self.previous_stage_rank,
-                msg=json.dumps({
-                    'code': BaseTrainingStage.MessageCode.BPROP_GRAD.value
-                }),
-                communicator_id=self.communicator.id
-            )
-            return _BiasAddGrad(op, received_grad)
+            def grad(dy):
+                fake_grad = CPPBackend.tf_lib().forward_and_send(
+                    tf.zeros((1,)), dy,
+                    receiver=self.previous_stage_rank,
+                    msg=json.dumps({
+                        'code': BaseTrainingStage.MessageCode.BPROP_GRAD.value
+                    }),
+                    communicator_id=self.communicator.id
+                )
+                return None, fake_grad
 
-        # 替换OP
-        with tf.compat.v1.get_default_graph().gradient_override_map({
-            'BiasAdd': 'DenseForwardAndSendGrad'
-        }):
-            return super(DensePipelineInputLayer, self).call(inputs)
+            return x, grad
+
+        self.__input_grad_fn = input_grad
+        self.__fake_kernel = None
+
+    def build(self, input_shape):
+        self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
+        super().build(input_shape)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0],) + self.__shape
+
+    def call(self, inputs, **kwargs):
+        return self.__input_grad_fn(inputs, self.__fake_kernel)

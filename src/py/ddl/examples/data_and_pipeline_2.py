@@ -1,13 +1,11 @@
 from tensorflow.keras.layers import Dense, Flatten
-from tensorflow.keras.models import Sequential
 import tensorflow as tf
 
 
 def main():
     from ddl.tensorflow.keras.parallelism.pipeline.model import PipelineModel, \
         PipelineStage
-    from ddl.tensorflow.keras.parallelism.pipeline import \
-        DensePipelineInputLayer
+    from ddl.tensorflow.keras.parallelism.pipeline import PipelineInputLayer
     from ddl.tensorflow.data_dispatcher import DataDispatcher
     from ddl.tensorflow.communicator import Communicator
 
@@ -24,24 +22,23 @@ def main():
     # ]
     model = PipelineModel([
         PipelineStage(
-            lambda: Sequential([
+            lambda: tf.keras.models.Sequential([
                 Flatten(input_shape=(28, 28)),
                 Dense(784, activation='relu', name='dense-0'),
                 Dense(196, activation='relu', name='dense-1'),
             ])),
         PipelineStage(
-            lambda: Sequential([
+            lambda: tf.keras.models.Sequential([
                 # 这里需要手动输入上一Stage的输出shape, 后期可以考虑由程序自行推断
                 # 但是涉及通信, 需要进行模型定义之后才能传输各自模型的输出模型
-                DensePipelineInputLayer(
-                    128, activation='relu', name='dense-0',
-                    input_shape=(196,)
-                ),
+                PipelineInputLayer(input_shape=(196,)),
+                Dense(128, activation='relu', name='dense-0',),
                 Dense(256, activation='relu', name='dense-1'),
                 Dense(10, activation='softmax', name='dense-2')
             ]))
     ])
 
+    # 进行数据分发(可选)
     world = Communicator.world()
     if world.rank == 0:
         (data, label), _ = tf.keras.datasets.mnist.load_data(
@@ -62,6 +59,7 @@ def main():
         loss=tf.losses.SparseCategoricalCrossentropy(),
         optimizer=tf.optimizers.Adam(0.001),
         metrics=['accuracy'],
+        # 尝试进行数据并行
         try_data_parallelism=True
     )
 
@@ -77,8 +75,5 @@ if __name__ == '__main__':
     from os.path import abspath, join
 
     sys.path.append(abspath(join(__file__, '../../../')))
-
-    from ddl.tensorflow.data_dispatcher import DataDispatcher
-    from ddl.tensorflow.communicator import Communicator
 
     main()
