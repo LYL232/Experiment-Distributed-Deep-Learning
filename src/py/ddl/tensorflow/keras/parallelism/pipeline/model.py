@@ -1,15 +1,34 @@
-from sys import stderr
-from tensorflow.keras.models import Model as Model
-from tensorflow.keras.optimizers import Optimizer
-from tensorflow.keras.callbacks import History
 from ddl.tensorflow.communicator import Communicator
 from ddl.tensorflow.keras.parallelism.pipeline import PipelineLayer
+from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineInputLayer
 from ddl.tensorflow.data_dispatcher import DataDispatcher
 from ddl.tensorflow.keras.parallelism.pipeline.training_stage import \
     FirstTrainingStage, IntermediateTrainingStage, LastTrainingStage
 from ddl.tensorflow.keras.parallelism.data import \
     data_parallelism_distributed_optimizer_wrapper
+from ddl.tensorflow.keras.models.model_prebuilder import ModelPreBuilder
+from ddl.tensorflow.keras.models.model import \
+    Sequential as PreBuilderSequential, \
+    Model as PreBuilderModel
+from ddl.message import Message
+import json
+
+from sys import stderr
+from tensorflow.keras.models import Model as Model
+from tensorflow.keras.optimizers import Optimizer
+from tensorflow.keras.callbacks import History
 import tensorflow as tf
+
+
+def intermediate_loss(grad, output):
+    """
+    中间loss函数, 此函数的训练效果理论上与原模型的训练效果一致,
+    其实就是偏差与输出的Hadamard积, 即按对应元素相乘
+    :@param grad: 从下一阶段后向传播得到的梯度
+    :@param output: 模型的输出
+    :@return: loss
+    """
+    return tf.reduce_mean(tf.multiply(grad, output), axis=None)
 
 
 class PipelineStage:
@@ -17,17 +36,13 @@ class PipelineStage:
     流水线模型的组成部分, 非第一阶段要求第一层是PipelineLayer的实例
     """
 
-    def __init__(self, model_getter: callable, *args, **kwargs):
+    def __init__(self, builder: ModelPreBuilder):
         """
-        @param model_getter: 模型加载的函数
-        @param args: 模型加载函数的参数
-        @param kwargs: 模型加载的参数
+        @param builder: 模型的预构建模型
         """
-        assert callable(model_getter)
+        assert isinstance(builder, ModelPreBuilder)
         self.__model = None
-        self.__args = args
-        self.__kwargs = kwargs
-        self.__model_getter = model_getter
+        self.__builder = builder
         self.__is_first_stage = None
         self.__pipeline_layer = None
 
@@ -46,9 +61,11 @@ class PipelineStage:
 
     @property
     def model(self) -> Model:
-        if self.__model is None:
-            self.__model = self.__model_getter(*self.__args, **self.__kwargs)
-        return self.__model
+        return self.__builder.model
+
+    @property
+    def builder(self) -> ModelPreBuilder:
+        return self.__builder
 
     @property
     def input_shape(self) -> tuple:
@@ -208,7 +225,34 @@ class PipelineModel(Model):
             if self.__pipeline_comm.rank < len(self.__stages):
                 stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
 
-                if self.__pipeline_comm.rank > 0:
+                builder = stage.builder
+
+                # 流水线前一阶段通知后一阶段自己的输出形状, 后一阶段将其作为输入形状,
+                # 并插入流水线层
+                if not self.__is_first_stage:
+                    # 是第一阶段, 就不必收听上一阶段的输出形状
+                    msg = Message.listen(self.__pipeline_comm).msg
+                    input_shape = tuple(json.loads(msg))
+
+                    # 插入流水线层
+                    if isinstance(builder, PreBuilderSequential):
+                        builder.insert_pipeline_input_layer(
+                            PipelineInputLayer(input_shape=input_shape)
+                        )
+                    elif isinstance(builder, PreBuilderModel):
+                        # todo:
+                        pass
+
+                if not self.__is_last_stage:
+                    # 不是最后一阶段, 往下传递自己的输出形状
+                    msg = json.dumps(list(stage.output_shape[1:]))
+                    Message.send(
+                        msg,
+                        self.__pipeline_comm.rank + 1,
+                        self.__pipeline_comm
+                    )
+
+                if not self.__is_first_stage > 0:
                     # 编译PipelineLayer
                     assert stage.pipeline_layer is not None, \
                         'stage first layer must be PipelineLayer'
@@ -228,17 +272,6 @@ class PipelineModel(Model):
                 self.__executing_model: Model = stage.model
 
                 if not self.__is_last_stage:
-                    def intermediate_loss(error, output):
-                        """
-                        中间loss函数, 此函数的训练效果理论上与原模型的训练效果一致,
-                        其实就是偏差与输出的Hadamard积, 即按对应元素相乘
-                        :@param diff: 从SecondStage后向传播得到的偏差数组
-                        :@param output: 模型的输出
-                        :@return: loss
-                        """
-                        return tf.reduce_mean(
-                            tf.multiply(error, output), axis=None)
-
                     loss = intermediate_loss
 
                 self.__executing_model.compile(
@@ -298,8 +331,7 @@ class PipelineModel(Model):
         @param log_stream: 日志记录流
         @return: Model.fit(...), 如果本进程不工作, 则None
         """
-        if not self._is_compiled:
-            raise Exception(f'{Communicator.world().rank} not compiled')
+        assert self._is_compiled, f'{Communicator.world().rank} not compiled'
         if not self.__work:
             return
 
@@ -395,8 +427,6 @@ class PipelineModel(Model):
         @return:
          当need_dispatch==1 时, DispatchingData.data(),
          否则 None
-
-        todo: 这里的通信方式应该是散射, 但是numpy.ndarray如何进行散射是个问题
         """
         comm = data_dispatcher.communicator
         root = data_dispatcher.root_rank

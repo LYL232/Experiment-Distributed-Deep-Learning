@@ -1,5 +1,5 @@
 from ddl.tensorflow.communicator import Communicator
-from ddl.tensorflow.message import Message
+from ddl.message import Message
 from ddl.log import info
 import numpy as np
 import pickle

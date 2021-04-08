@@ -5,9 +5,9 @@ import tensorflow as tf
 def main():
     from ddl.tensorflow.keras.parallelism.pipeline.model import PipelineModel, \
         PipelineStage
-    from ddl.tensorflow.keras.parallelism.pipeline import PipelineInputLayer
     from ddl.tensorflow.data_dispatcher import DataDispatcher
     from ddl.tensorflow.communicator import Communicator
+    from ddl.tensorflow.keras.models.model import Sequential
 
     tf.compat.v1.disable_eager_execution()
 
@@ -22,17 +22,14 @@ def main():
     # ]
     model = PipelineModel([
         PipelineStage(
-            lambda: tf.keras.models.Sequential([
+            Sequential([
                 Flatten(input_shape=(28, 28)),
                 Dense(784, activation='relu', name='dense-0'),
                 Dense(196, activation='relu', name='dense-1'),
             ])),
         PipelineStage(
-            lambda: tf.keras.models.Sequential([
-                # 这里需要手动输入上一Stage的输出shape, 后期可以考虑由程序自行推断
-                # 但是涉及通信, 需要进行模型定义之后才能传输各自模型的输出模型
-                PipelineInputLayer(input_shape=(196,)),
-                Dense(128, activation='relu', name='dense-0',),
+            Sequential([
+                Dense(128, activation='relu', name='dense-0'),
                 Dense(256, activation='relu', name='dense-1'),
                 Dense(10, activation='softmax', name='dense-2')
             ]))

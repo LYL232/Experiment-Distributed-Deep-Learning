@@ -5,7 +5,7 @@ from tensorflow.keras.callbacks import Callback, History
 from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.communicator import Communicator
 from ddl.tensorflow.util import executing_eagerly
-from ddl.tensorflow.message import Message
+from ddl.message import Message
 from ddl.log import info
 from ddl.tensorflow.keras.parallelism.data import \
     InitialParametersBroadcastCallBack
