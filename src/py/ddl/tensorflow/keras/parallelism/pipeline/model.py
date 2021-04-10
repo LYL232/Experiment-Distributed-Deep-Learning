@@ -227,25 +227,39 @@ class PipelineModel(Model):
 
                 builder = stage.builder
 
+                from ddl.log import info
+
                 # 流水线前一阶段通知后一阶段自己的输出形状, 后一阶段将其作为输入形状,
                 # 并插入流水线层
                 if not self.__is_first_stage:
                     # 是第一阶段, 就不必收听上一阶段的输出形状
                     msg = Message.listen(self.__pipeline_comm).msg
-                    input_shape = tuple(json.loads(msg))
-
+                    input_shape = json.loads(msg)
+                    info(f'input_shape: {input_shape}')
                     # 插入流水线层
                     if isinstance(builder, PreBuilderSequential):
                         builder.insert_pipeline_input_layer(
                             PipelineInputLayer(input_shape=input_shape)
                         )
                     elif isinstance(builder, PreBuilderModel):
-                        # todo:
-                        pass
+                        builder.set_inputs_shape(input_shape)
 
                 if not self.__is_last_stage:
                     # 不是最后一阶段, 往下传递自己的输出形状
-                    msg = json.dumps(list(stage.output_shape[1:]))
+                    output_shape = list(stage.output_shape)
+
+                    info(f'stage.output_shape: {stage.output_shape}')
+
+                    if isinstance(output_shape[0], tuple) or \
+                            isinstance(output_shape[0], list):
+                        for i in range(len(output_shape)):
+                            output_shape[i] = list(output_shape[i][1:])
+                    else:
+                        output_shape = list(output_shape[1:])
+
+                    info(f'output_shape: {output_shape}')
+
+                    msg = json.dumps(output_shape)
                     Message.send(
                         msg,
                         self.__pipeline_comm.rank + 1,

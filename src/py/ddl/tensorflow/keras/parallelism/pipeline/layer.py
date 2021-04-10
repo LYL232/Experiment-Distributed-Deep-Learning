@@ -1,8 +1,8 @@
-from tensorflow.keras.layers import Layer
 from ddl.tensorflow.communicator import Communicator
 from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.keras.parallelism.pipeline.training_stage \
     import BaseTrainingStage
+from tensorflow.keras.layers import Layer
 import tensorflow as tf
 import abc
 import json
@@ -54,11 +54,21 @@ class PipelineLayer(Layer, metaclass=abc.ABCMeta):
 
 
 class PipelineInputLayer(PipelineLayer):
-    def __init__(self, input_shape: tuple, name: str = None, **kwargs):
+    def __init__(
+            self, input_shape: tuple = None, name: str = None,
+            index: int = 0, **kwargs):
+        """
+        @param input_shape: 输入形状
+        @param name: 名字
+        @param index: 输入的索引, 当模型有输入时, 此项才可能非0
+        @param kwargs:
+        """
         kwargs.pop('trainable', None)
-        super().__init__(
-            input_shape=input_shape, trainable=True, name=name, **kwargs
-        )
+        if input_shape is not None:
+            kwargs['input_shape'] = input_shape
+        super().__init__(trainable=True, name=name, **kwargs)
+
+        self.__index = index
 
         self.__shape = input_shape
 
@@ -77,7 +87,8 @@ class PipelineInputLayer(PipelineLayer):
                     tf.zeros((1,)), dy,
                     receiver=self.previous_stage_rank,
                     msg=json.dumps({
-                        'code': BaseTrainingStage.MessageCode.BPROP_GRAD.value
+                        'code': BaseTrainingStage.MessageCode.BPROP_GRAD.value,
+                        'index': self.__index
                     }),
                     communicator_id=self.communicator.id
                 )
@@ -90,10 +101,14 @@ class PipelineInputLayer(PipelineLayer):
 
     def build(self, input_shape):
         self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
+        if self.__shape is None:
+            self.__shape = input_shape[1:]
         super().build(input_shape)
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0],) + self.__shape
 
     def call(self, inputs, **kwargs):
+        if self.__shape is None:
+            self.__shape = inputs.shape[1:]
         return self.__input_grad_fn(inputs, self.__fake_kernel)

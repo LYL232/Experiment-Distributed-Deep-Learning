@@ -273,9 +273,9 @@ class BaseTrainingStage(metaclass=abc.ABCMeta):
             *self.__init_micro_batch_grads
         ], feed_dict={
             self.__micro_batch_first_size_placeholder:
-                self._micro_batch_inputs[0].shape[0],
+                self._micro_batch_inputs[0][0].shape[0],
             self.__micro_batch_last_size_placeholder:
-                self._micro_batch_inputs[-1].shape[0],
+                self._micro_batch_inputs[-1][0].shape[0],
             self.__micro_batch_sizes_placeholder:
                 len(self._micro_batch_inputs)
         })
@@ -306,36 +306,56 @@ class StageWithNextStage(BaseTrainingStage, metaclass=abc.ABCMeta):
             log_stream=log_stream,
             **kwargs
         )
-        self.__next_stage_input_shape = next_stage_input_shape
+
+        # 判断是不是tuple内嵌tuple
+        if isinstance(next_stage_input_shape[0], tuple):
+            self.__next_stage_input_shape = next_stage_input_shape
+            # 下一阶段所需的输入个数
+            self.__next_stage_input_count = len(next_stage_input_shape)
+        else:
+            self.__next_stage_input_shape = (next_stage_input_shape,)
+            self.__next_stage_input_count = 1
 
         self.__next_stage_rank = pipeline_communicator.rank + 1
 
         # 定义静态计算图: 发送前向传播结果
-        self._send_fwd_outputs_placeholder = tf.compat.v1.placeholder(
-            dtype=tf.float32, shape=next_stage_input_shape)
-        self._send_fwd_outputs = CPPBackend.tf_lib().send_tensor(
-            self._send_fwd_outputs_placeholder,
+        self._send_fwd_outputs_placeholders = [
+            tf.compat.v1.placeholder(
+                dtype=tf.float32, shape=self.__next_stage_input_shape[i]
+            ) for i in range(self.__next_stage_input_count)
+        ]
+        self._send_fwd_outputs_ops = [CPPBackend.tf_lib().send_tensor(
+            self._send_fwd_outputs_placeholders[i],
             receiver=self.__next_stage_rank,
             name=f'pipeline-{pipeline_model_id}-{pipeline_communicator.rank}-'
-                 f'forward-input-to-{self.__next_stage_rank}',
+                 f'forward-input-{i}-to-{self.__next_stage_rank}',
             communicator_id=self.pipeline_communicator.id
-        )
+        ) for i in range(self.__next_stage_input_count)]
         # 定义静态计算图: 接收下一阶段传输的后向传播结果
-        self._receive_error_placeholder = tf.compat.v1.placeholder(
-            dtype=tf.float32, shape=next_stage_input_shape,
-        )
-        self._receive_error = CPPBackend.tf_lib().receive_tensor(
-            self._receive_error_placeholder,
-            sender=self.__next_stage_rank,
-            communicator_id=self.pipeline_communicator.id,
-            name=f'pipeline-{self.pipeline_model_id}'
-                 f'-{self.pipeline_communicator.rank}-'
-                 f'back-result-from-{self.__next_stage_rank}',
-        )
+        self._receive_grad_placeholders = [
+            tf.compat.v1.placeholder(
+                dtype=tf.float32, shape=self.__next_stage_input_shape[i]
+            )
+            for i in range(self.__next_stage_input_count)
+        ]
+        self._receive_gradient_ops = [
+            CPPBackend.tf_lib().receive_tensor(
+                self._receive_grad_placeholders[i],
+                sender=self.__next_stage_rank,
+                communicator_id=self.pipeline_communicator.id,
+                name=f'pipeline-{self.pipeline_model_id}'
+                     f'-{self.pipeline_communicator.rank}-'
+                     f'back-gradient-{i}-from-{self.__next_stage_rank}',
+            ) for i in range(self.__next_stage_input_count)
+        ]
 
         self._done = False
 
         self._history = []
+
+    @property
+    def next_stage_input_count(self) -> int:
+        return self.__next_stage_input_count
 
     @property
     def next_stage_input_shape(self) -> tuple:
@@ -354,7 +374,7 @@ class StageWithNextStage(BaseTrainingStage, metaclass=abc.ABCMeta):
         info(f'waiting back propagation result, micro batches: '
              f'{len(self._micro_batch_inputs)}')
 
-        errors = []
+        grads = []
 
         for i in range(len(self._micro_batch_inputs)):
             info('listening back prop msg')
@@ -378,31 +398,43 @@ class StageWithNextStage(BaseTrainingStage, metaclass=abc.ABCMeta):
             elif msg_obj['code'] == self.MessageCode.BPROP_GRAD.value:
                 assert len(self._micro_batch_inputs) > 0
                 if executing_eagerly():
-                    error = CPPBackend.tf_lib().receive_tensor(
-                        tf.zeros(shape=(
-                            self._micro_batch_inputs[i].shape[0],
-                            *self.__next_stage_input_shape[1:]
-                        )),
-                        name=f'pipeline-{self.pipeline_model_id}'
-                             f'-{self.pipeline_communicator.rank}-'
-                             f'back-result-from-{self.__next_stage_rank}',
-                        sender=self.__next_stage_rank,
-                        communicator_id=self.pipeline_communicator.id
-                    )
+                    raise NotImplementedError
+                    # grad = CPPBackend.tf_lib().receive_tensor(
+                    #     tf.zeros(shape=(
+                    #         self._micro_batch_inputs[i].shape[0],
+                    #         *self.__next_stage_input_shape[1:]
+                    #     )),
+                    #     name=f'pipeline-{self.pipeline_model_id}'
+                    #          f'-{self.pipeline_communicator.rank}-'
+                    #          f'back-result-from-{self.__next_stage_rank}',
+                    #     sender=self.__next_stage_rank,
+                    #     communicator_id=self.pipeline_communicator.id
+                    # )
                 else:
-                    error = self._session.run(
-                        self._receive_error,
-                        feed_dict={
-                            self._receive_error_placeholder: np.zeros(
-                                shape=(
-                                    self._micro_batch_inputs[i].shape[0],
-                                    *self.__next_stage_input_shape[1:]
-                                )
+                    received_grads = []
+                    while len(received_grads) < self.__next_stage_input_count:
+                        index = msg_obj['index']
+                        info(f'{self._micro_batch_inputs[i][0].shape}')
+                        shape = (
+                            self._micro_batch_inputs[i][0].shape[0],
+                            *self.__next_stage_input_shape[index][1:]
+                        )
+                        feed_dict = {
+                            self._receive_grad_placeholders[index]: np.zeros(
+                                shape=shape
                             )
                         }
-                    )
-                info(f'got back propagation result, shape={error.shape}')
-                errors.append(error)
+                        info(f'index={index}, shape={shape}')
+                        grad = self._session.run(
+                            self._receive_gradient_ops[index],
+                            feed_dict=feed_dict
+                        )
+                        received_grads.append(grad)
+                        info(
+                            f'got back propagation gradient index={index},'
+                            f' shape={grad.shape}')
+
+                grads.append(received_grads)
             else:
                 raise Exception(f'got unexpected msg: {msg}')
 
@@ -414,11 +446,24 @@ class StageWithNextStage(BaseTrainingStage, metaclass=abc.ABCMeta):
                     0, communicator=self.stage_communicator)
             ]
 
+        # 这里的self._micro_batch_inputs和grads全是 batch列表[tuple(输入0, 输入1, ..., 输入n)]
+        # 的形式, 要将其转换成([输入0 batch列表], [输入1 batch列表], ..., [输入n batch列表])形式
+
+        inputs = []
+        targets = []
+        for i in range(self.__next_stage_input_count):
+            this_inputs = []
+            this_targets = []
+            for j in range(len(self._micro_batch_inputs)):
+                this_inputs.append(self._micro_batch_inputs[j][i])
+                this_targets.append(grads[j][i])
+            inputs.append(np.concatenate(this_inputs, axis=0))
+            targets.append(np.concatenate(this_targets, axis=0))
+
         self._initialize_micro_batch_vars()
 
         self._history.append(self.model.fit(
-            np.concatenate(self._micro_batch_inputs, axis=0),
-            np.concatenate(errors, axis=0),
+            inputs, targets,
             batch_size=micro_batch_size,
             epochs=1,
             verbose=0,
@@ -427,10 +472,10 @@ class StageWithNextStage(BaseTrainingStage, metaclass=abc.ABCMeta):
         ))
         self._micro_batch_inputs = []
 
-    def _send_forward_propagation_result(self, outputs: np.ndarray):
+    def _send_forward_propagation_result(self, outputs: tuple):
         """
         将前向传播结果传输给下一阶段
-        @param outputs: 前向传播结果
+        @param outputs: 前向传播结果, 由多个输出数组所组成的tuple
         @return: None
         """
         info('sending forward propagation message')
@@ -442,21 +487,31 @@ class StageWithNextStage(BaseTrainingStage, metaclass=abc.ABCMeta):
             communicator=self.pipeline_communicator
         )
         if executing_eagerly():
-            CPPBackend.tf_lib().send_tensor(
-                tf.constant(outputs, dtype=tf.float32),
-                receiver=self.__next_stage_rank,
-                name=f'pipeline-{self.pipeline_model_id}'
-                     f'-{self.pipeline_communicator.rank}-'
-                     f'forward-input-to-{self.__next_stage_rank}',
-                communicator_id=self.pipeline_communicator.id
-            )
+            raise NotImplementedError
+            # CPPBackend.tf_lib().send_tensor(
+            #     tf.constant(outputs, dtype=tf.float32),
+            #     receiver=self.__next_stage_rank,
+            #     name=f'pipeline-{self.pipeline_model_id}'
+            #          f'-{self.pipeline_communicator.rank}-'
+            #          f'forward-input-to-{self.__next_stage_rank}',
+            #     communicator_id=self.pipeline_communicator.id
+            # )
         else:
-            self._session.run(
-                self._send_fwd_outputs,
-                feed_dict={
-                    self._send_fwd_outputs_placeholder: outputs,
-                }
-            )
+            if self.__next_stage_input_count == 1:
+                self._session.run(
+                    self._send_fwd_outputs_ops[0],
+                    feed_dict={
+                        self._send_fwd_outputs_placeholders[0]: outputs,
+                    }
+                )
+            else:
+                for i in range(self.__next_stage_input_count):
+                    self._session.run(
+                        self._send_fwd_outputs_ops[i],
+                        feed_dict={
+                            self._send_fwd_outputs_placeholders[i]: outputs[i]
+                        }
+                    )
 
 
 class StageWithPreviousStage(BaseTrainingStage, metaclass=abc.ABCMeta):
@@ -484,21 +539,38 @@ class StageWithPreviousStage(BaseTrainingStage, metaclass=abc.ABCMeta):
             log_stream=log_stream,
             **kwargs
         )
-        self.__previous_stage_output_shape = previous_stage_output_shape
+
+        # 判断是不是tuple内嵌tuple
+        if isinstance(previous_stage_output_shape[0], tuple):
+            self.__previous_stage_output_shape = previous_stage_output_shape
+            # 下一阶段所需的输入个数
+            self.__previous_stage_output_count = len(
+                previous_stage_output_shape)
+        else:
+            self.__previous_stage_output_shape = (previous_stage_output_shape,)
+            self.__previous_stage_output_count = 1
 
         self.__previous_stage_rank = self.pipeline_communicator.rank - 1
 
         # 接收上一阶段传来的前向传播结果op静态图
-        self.__receive_fwd_outputs_placeholder = tf.compat.v1.placeholder(
-            dtype=tf.float32, shape=previous_stage_output_shape)
-        self.__receive_fwd_outputs = CPPBackend.tf_lib().receive_tensor(
-            self.__receive_fwd_outputs_placeholder,
-            sender=self.__previous_stage_rank,
-            name=f'pipeline-{pipeline_model_id}-{self.__previous_stage_rank}-'
-                 f'forward-input-to-{pipeline_communicator.rank}',
-            # 这里要传入handle(整数值), 而不是一个python对象
-            communicator_id=pipeline_communicator.id
-        )
+        self.__receive_fwd_outputs_placeholders = [
+            tf.compat.v1.placeholder(
+                dtype=tf.float32, shape=self.__previous_stage_output_shape[i],
+                name=f'pipeline-{pipeline_model_id}-'
+                     f'receive-forward-outputs-{i}-placeholder'
+            ) for i in range(self.__previous_stage_output_count)
+        ]
+        self.__receive_fwd_outputs_ops = [
+            CPPBackend.tf_lib().receive_tensor(
+                self.__receive_fwd_outputs_placeholders[i],
+                sender=self.__previous_stage_rank,
+                name=f'pipeline-{pipeline_model_id}-'
+                     f'{self.__previous_stage_rank}-'
+                     f'forward-input-{i}-to-{pipeline_communicator.rank}',
+                # 这里要传入handle(整数值), 而不是一个python对象
+                communicator_id=pipeline_communicator.id
+            ) for i in range(self.__previous_stage_output_count)
+        ]
 
     @property
     def previous_stage_output_shape(self) -> tuple:
@@ -537,29 +609,27 @@ class StageWithPreviousStage(BaseTrainingStage, metaclass=abc.ABCMeta):
         assert msg_obj['code'] == self.MessageCode.FPROP_RESULT.value
         info('getting forward propagation result')
 
-        shape = (
-            micro_batch_end - micro_batch_begin,
-            *self.__previous_stage_output_shape[1:]
-        )
-
         if executing_eagerly():
-            result = CPPBackend.tf_lib().receive_tensor(
-                tf.zeros(shape=shape, dtype=tf.float32),
-                sender=self.__previous_stage_rank,
-                name=f'pipeline-{self.pipeline_model_id}-'
-                     f'{self.__previous_stage_rank}-'
-                     f'forward-input-to-{self.pipeline_communicator.rank}',
-                # 这里要传入handle(整数值), 而不是一个python对象
-                communicator_id=self.pipeline_communicator.id
-            )
+            raise NotImplementedError
+            # result = CPPBackend.tf_lib().receive_tensor(
+            #     tf.zeros(shape=shape, dtype=tf.float32),
+            #     sender=self.__previous_stage_rank,
+            #     name=f'pipeline-{self.pipeline_model_id}-'
+            #          f'{self.__previous_stage_rank}-'
+            #          f'forward-input-to-{self.pipeline_communicator.rank}',
+            #     # 这里要传入handle(整数值), 而不是一个python对象
+            #     communicator_id=self.pipeline_communicator.id
+            # )
         else:
+            feed_dict = {}
+            for i in range(self.__previous_stage_output_count):
+                feed_dict[self.__receive_fwd_outputs_placeholders[i]] = \
+                    np.zeros((
+                        micro_batch_end - micro_batch_begin,
+                        *self.__previous_stage_output_shape[i][1:]
+                    ))
             result = self._session.run(
-                self.__receive_fwd_outputs,
-                feed_dict={
-                    self.__receive_fwd_outputs_placeholder: np.zeros(
-                        shape=shape
-                    ),
-                }
+                self.__receive_fwd_outputs_ops, feed_dict=feed_dict
             )
         # info(f'got forward propagation result')
         return result
@@ -590,7 +660,15 @@ class FirstTrainingStage(StageWithNextStage):
         )
         # info('started, initializing')
 
-        self.__inputs = inputs
+        # 要将inputs转换成tuple(输入0, 输入1, ..., 输入n)的形式
+        if self.next_stage_input_count > 1:
+            assert isinstance(inputs, list) or isinstance(inputs, tuple)
+            self.__inputs = inputs
+        else:
+            if isinstance(inputs, list) or isinstance(inputs, tuple):
+                self.__inputs = inputs
+            else:
+                self.__inputs = (inputs,)
 
         # info('model:')
         # self.model.summary(print_fn=info)
@@ -628,9 +706,13 @@ class FirstTrainingStage(StageWithNextStage):
                     # 说明是一个新的批次的开始
                     micro_batch_size = micro_batch_end - micro_batch_begin
 
-                inputs = self.__inputs[micro_batch_begin:micro_batch_end, ...]
+                inputs = [
+                    each[micro_batch_begin:micro_batch_end, ...]
+                    for each in self.__inputs
+                ]
 
                 self._micro_batch_inputs.append(inputs)
+
                 outputs = self.model.predict(inputs)
 
                 info(
