@@ -44,20 +44,13 @@ class PipelineStage:
         self.__model = None
         self.__builder = builder
         self.__is_first_stage = None
-        self.__pipeline_layer = None
 
     @property
-    def pipeline_layer(self) -> PipelineLayer:
+    def pipeline_layers(self) -> tuple:
         """
         @return: 当该对象是第一Stage时, 返回None, 否则, 返回其连接上一Stage的层
         """
-        if self.__is_first_stage is None:
-            first_layer = self.model.get_layer(index=0)
-            self.__pipeline_layer = first_layer if isinstance(
-                first_layer, PipelineLayer) else None
-            return self.__pipeline_layer
-        else:
-            return None if self.__is_first_stage else self.__pipeline_layer
+        return self.__builder.pipeline_layers
 
     @property
     def model(self) -> Model:
@@ -183,6 +176,7 @@ class PipelineModel(Model):
                     f'{self.processes_require} processes, but only '
                     f'{processes} provided, so no data parallelism '
                     f'applied\n')
+                try_data_parallelism = False
             else:
                 # 进程数量可以进行数据并行, 进行通信域分割
                 self.__pipeline_model_id = \
@@ -232,20 +226,27 @@ class PipelineModel(Model):
                 if not self.__is_first_stage:
                     # 是第一阶段, 就不必收听上一阶段的输出形状
                     msg = Message.listen(self.__pipeline_comm).msg
-                    input_shape = tuple(json.loads(msg))
-
+                    input_shape = json.loads(msg)
                     # 插入流水线层
                     if isinstance(builder, PreBuilderSequential):
                         builder.insert_pipeline_input_layer(
                             PipelineInputLayer(input_shape=input_shape)
                         )
                     elif isinstance(builder, PreBuilderModel):
-                        # todo:
-                        pass
+                        builder.set_inputs_shape(input_shape)
 
                 if not self.__is_last_stage:
                     # 不是最后一阶段, 往下传递自己的输出形状
-                    msg = json.dumps(list(stage.output_shape[1:]))
+                    output_shape = list(stage.output_shape)
+
+                    if isinstance(output_shape[0], tuple) or \
+                            isinstance(output_shape[0], list):
+                        for i in range(len(output_shape)):
+                            output_shape[i] = list(output_shape[i][1:])
+                    else:
+                        output_shape = list(output_shape[1:])
+
+                    msg = json.dumps(output_shape)
                     Message.send(
                         msg,
                         self.__pipeline_comm.rank + 1,
@@ -254,9 +255,12 @@ class PipelineModel(Model):
 
                 if not self.__is_first_stage > 0:
                     # 编译PipelineLayer
-                    assert stage.pipeline_layer is not None, \
-                        'stage first layer must be PipelineLayer'
-                    stage.pipeline_layer.compile_by_pipeline_model(self)
+                    pipeline_layers = stage.pipeline_layers
+                    assert pipeline_layers is not None, \
+                        'not first stage must have pipeline layer'
+                    for each in pipeline_layers:
+                        assert isinstance(each, PipelineLayer)
+                        each.compile_by_pipeline_model(self)
 
                 # 进行数据并行, 分割stage通信域
                 self.__stage_comm = \
@@ -301,8 +305,7 @@ class PipelineModel(Model):
             validation_freq=1,
             max_queue_size=10, workers=1,
             use_multiprocessing=False,
-            micro_batch_size: int = None,
-            log_level: int = 0, log_stream=None
+            micro_batch_size: int = None
     ) -> History or list:
         """
         启动训练进程, 所有执行非最后一个Stage的进程将监听消息,
@@ -327,8 +330,6 @@ class PipelineModel(Model):
         @param workers:
         @param use_multiprocessing:
         @param micro_batch_size: 微批次大小, 如果为None则代表不用微批次
-        @param log_level: 日志记录等级, 目前取值是0, 1
-        @param log_stream: 日志记录流
         @return: Model.fit(...), 如果本进程不工作, 则None
         """
         assert self._is_compiled, f'{Communicator.world().rank} not compiled'
@@ -370,7 +371,6 @@ class PipelineModel(Model):
                 model=self.__executing_model,
                 next_stage_input_shape=stage.output_shape,
                 inputs=x,
-                log_level=log_level, log_stream=log_stream,
                 **fit_args
             )
         elif self.__is_last_stage:
@@ -385,7 +385,6 @@ class PipelineModel(Model):
                 targets=y,
                 verbose=verbose,
                 batch_size=batch_size, epochs=epochs,
-                log_level=log_level, log_stream=log_stream,
                 micro_batch_size=micro_batch_size,
                 **fit_args
             )
@@ -399,7 +398,6 @@ class PipelineModel(Model):
                 previous_stage_output_shape=stage.input_shape,
                 model=self.__executing_model,
                 next_stage_input_shape=stage.output_shape,
-                log_level=log_level, log_stream=log_stream,
                 **fit_args
             )
         return training_stage.run()

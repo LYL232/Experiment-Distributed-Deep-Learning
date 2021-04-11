@@ -13,6 +13,7 @@ class ModelPreBuilder(metaclass=abc.ABCMeta):
         self.__model = None
         self.__built = False
         self.__model_getter = model_getter
+        self.__pipeline_layers = None
 
     @property
     def model(self) -> Model:
@@ -28,3 +29,23 @@ class ModelPreBuilder(metaclass=abc.ABCMeta):
         @return: bool
         """
         return self.__built
+
+    @property
+    def pipeline_layers(self) -> tuple:
+        """
+        返回流水线层的元组
+        @return: tuple, 如果只有一个, 则是只有一个元素的tuple
+        """
+        return self.__pipeline_layers
+
+    def _set_pipeline_layers(self, pipeline_layers: tuple):
+        """
+        由子类在编译时获取流水线层调用
+        @param pipeline_layers: tuple, 每个元素必须是PipelineLayer
+        @return:
+        """
+        from ddl.tensorflow.keras.parallelism.pipeline.layer import \
+            PipelineLayer
+        for each in pipeline_layers:
+            assert isinstance(each, PipelineLayer)
+        self.__pipeline_layers = pipeline_layers

@@ -1,17 +1,70 @@
 from ddl.tensorflow.keras.models.model_prebuilder import ModelPreBuilder
-from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineLayer
-from tensorflow.keras.models import Model as KerasModel, \
-    Sequential as KerasSequential
+from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineLayer, \
+    PipelineInputLayer
+from tensorflow.keras.models import Sequential as KerasSequential, Model as \
+    KerasModel
+from tensorflow.keras.layers import Input
+from tensorflow.python.framework.ops import Tensor
 
 
 class Model(ModelPreBuilder):
-    def __init__(self, **kwargs):
-        # 在流水线模型中非第一阶段的inputs需要将其梯度传递给上一阶段，所以需要替换其inputs
-        self.__inputs = kwargs.pop('inputs', None)
+    def __init__(
+            self,
+            graph_def: callable,
+            inputs: Tensor or tuple = None
+    ):
+        """
+        keras的模型预构建
+        @param inputs: 模型的原始输入
+        @param graph_def: 模型的层级结构定义函数,
+         接收一个参数, 这个参数为inputs张量或者数个inputs张量元组,
+         返回一个输出张量或者多个输出张量元组
+        """
+        assert callable(graph_def)
 
-        super().__init__(
-            lambda: KerasModel(inputs=self.__inputs, **kwargs)
-        )
+        self.__inputs = inputs
+        self.__pipelined_inputs = inputs
+
+        def model_def():
+            assert self.__pipelined_inputs is not None
+
+            if isinstance(self.__pipelined_inputs, (list, tuple)):
+                outputs = graph_def(*self.__pipelined_inputs)
+            else:
+                outputs = graph_def(self.__pipelined_inputs)
+            return KerasModel(
+                inputs=self.__inputs, outputs=outputs
+            )
+
+        super().__init__(model_def)
+
+    def set_inputs_shape(self, inputs_shape: tuple):
+        """
+        留给自动获取上一阶段输出形状并赋值给这一阶段的接口
+        @param inputs_shape:
+        @return:
+        """
+        assert self.__inputs is None
+        first_element = inputs_shape[0]
+
+        if isinstance(first_element, (tuple, list)):
+            self.__pipelined_inputs = []
+            pipeline_layers = []
+            self.__inputs = []
+            for i in range(len(inputs_shape)):
+                this_inputs = Input(shape=inputs_shape[i])
+                pipeline_layer = PipelineInputLayer(index=i)
+                self.__inputs.append(this_inputs)
+                pipeline_layers.append(pipeline_layer)
+                self.__pipelined_inputs.append(pipeline_layer(this_inputs))
+            self.__inputs = tuple(self.__inputs)
+            self.__pipelined_inputs = tuple(self.__pipelined_inputs)
+            self._set_pipeline_layers(tuple(pipeline_layers))
+        else:
+            self.__inputs = Input(shape=inputs_shape)
+            pipeline_layer = PipelineInputLayer()
+            self.__pipelined_inputs = pipeline_layer(self.__inputs)
+            self._set_pipeline_layers((pipeline_layer,))
 
 
 class Sequential(ModelPreBuilder):
@@ -30,4 +83,5 @@ class Sequential(ModelPreBuilder):
         @return: None
         """
         assert not self.built
+        self._set_pipeline_layers((layer,))
         self.__layers = [layer, *self.__layers]

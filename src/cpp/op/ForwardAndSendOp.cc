@@ -13,6 +13,8 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 using namespace tensorflow;
 
+std::mutex ForwardAndSendOp::sendingMutex_;
+
 REGISTER_OP("ForwardAndSend")
         .Attr("T: {int32, int64, float32, float64}")
         .Input("forward: T")
@@ -48,6 +50,8 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
     auto &global = Global::get();
     const auto &commPtr = global.getCommunicator(communicatoId_);
 
+    sendingMutex_.lock();
+
     global.messageController().sendMessage(
             Message(msg_.c_str(), commPtr->rank(), msg_.length()),
             receiver_, commPtr);
@@ -64,6 +68,7 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
                     receiver_, commPtr
             )
     );
+    sendingMutex_.unlock();
 }
 
 REGISTER_KERNEL_BUILDER(Name("ForwardAndSend").Device(DEVICE_CPU), ForwardAndSendOp)

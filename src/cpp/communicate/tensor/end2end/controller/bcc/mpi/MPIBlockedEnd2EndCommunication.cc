@@ -32,7 +32,7 @@ StatusCode MPIBlockedEnd2EndCommunication::send(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sending tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
-    const auto &communicator = dynamic_cast<const MPICommunicator&>(*request.communicator());
+    const auto &communicator = dynamic_cast<const MPICommunicator &>(*request.communicator());
 
     MPI_Send(
             sendBuffer_,
@@ -58,7 +58,7 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("mpi receiving Tensor: " << request.key())
 #endif
-    const auto &communicator = dynamic_cast<const MPICommunicator&>(*request.communicator());
+    const auto &communicator = dynamic_cast<const MPICommunicator &>(*request.communicator());
     MPI_Recv(
             receiveBuffer_,
             request.elements(),

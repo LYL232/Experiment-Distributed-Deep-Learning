@@ -1,4 +1,5 @@
-from tensorflow.keras.layers import Dense, Flatten
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, \
+    MaxPooling2D, Dropout, Reshape
 import tensorflow as tf
 
 
@@ -13,26 +14,34 @@ def main():
 
     # 原模型定义:
     # [
-    #   Flatten(input_shape=(28, 28)),
-    #   Dense(784, activation='relu'),
-    #   Dense(196, activation='relu'),
-    #   Dense(128, activation='relu', name='dense-0'),
-    #   Dense(256, activation='relu', name='dense-1'),
-    #   Dense(10, activation='softmax', name='dense-2')
+    #     Reshape(input_shape=(28, 28), target_shape=(28, 28, 1)),
+    #     Conv2D(32, [3, 3], activation='relu'),
+    #     Conv2D(64, [3, 3], activation='relu'),
+    #     MaxPooling2D(pool_size=(2, 2)),
+    #     Dropout(0.25),
+    #     Flatten(),
+    #     Dense(128, activation='relu'),
+    #     Dropout(0.5),
+    #     Dense(10, activation='softmax')
     # ]
+
     model = PipelineModel([
         PipelineStage(
             Sequential([
-                Flatten(input_shape=(28, 28)),
-                Dense(784, activation='relu', name='dense-0'),
-                Dense(196, activation='relu', name='dense-1'),
+                Reshape(input_shape=(28, 28), target_shape=(28, 28, 1)),
+                Conv2D(32, [3, 3], activation='relu'),
+                Conv2D(64, [3, 3], activation='relu'),
+                MaxPooling2D(pool_size=(2, 2)),
+                Dropout(0.25),
+                Flatten()
             ])),
         PipelineStage(
             Sequential([
-                Dense(128, activation='relu', name='dense-0'),
-                Dense(256, activation='relu', name='dense-1'),
-                Dense(10, activation='softmax', name='dense-2')
-            ]))
+                Dense(128, activation='relu'),
+                Dropout(0.5),
+                Dense(10, activation='softmax')
+            ])
+        )
     ])
 
     # 进行数据分发(可选)

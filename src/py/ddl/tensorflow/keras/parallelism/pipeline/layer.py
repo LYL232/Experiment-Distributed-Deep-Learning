@@ -1,8 +1,9 @@
-from tensorflow.keras.layers import Layer
 from ddl.tensorflow.communicator import Communicator
 from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.keras.parallelism.pipeline.training_stage \
     import BaseTrainingStage
+from tensorflow.keras.layers import Layer
+from tensorflow.python.framework.ops import Tensor
 import tensorflow as tf
 import abc
 import json
@@ -26,18 +27,14 @@ class PipelineLayer(Layer, metaclass=abc.ABCMeta):
         """
         @return: 上一阶段的模型所属的rank, 如果是第一阶段的模型, 则返回-1
         """
-        if not self.__compiled:
-            raise Exception(
-                'access last stage rank before compile pipeline model'
-            )
+        assert self.__compiled, 'access previous stage rank before' \
+                                ' compile pipeline model'
         return self.__previous_stage_rank
 
     @property
     def communicator(self) -> Communicator:
-        if not self.__compiled:
-            raise Exception(
-                'access last stage rank before compile pipeline model'
-            )
+        assert self.__compiled, 'access communicator before' \
+                                ' compile pipeline model'
         return self.__communicator
 
     def compile_by_pipeline_model(self, pipeline_model) -> None:
@@ -47,6 +44,9 @@ class PipelineLayer(Layer, metaclass=abc.ABCMeta):
         @param pipeline_model: 即将编译完成的PipelineModel
         @return: None
         """
+        from ddl.tensorflow.keras.parallelism.pipeline.model import \
+            PipelineModel
+        assert isinstance(pipeline_model, PipelineModel)
         self.__previous_stage_rank = \
             pipeline_model.pipeline_communicator.rank - 1
         self.__communicator = pipeline_model.pipeline_communicator
@@ -54,11 +54,21 @@ class PipelineLayer(Layer, metaclass=abc.ABCMeta):
 
 
 class PipelineInputLayer(PipelineLayer):
-    def __init__(self, input_shape: tuple, name: str = None, **kwargs):
+    def __init__(
+            self, input_shape: tuple = None, name: str = None,
+            index: int = 0, **kwargs):
+        """
+        @param input_shape: 输入形状
+        @param name: 名字
+        @param index: 输入的索引, 当模型有输入时, 此项才可能非0
+        @param kwargs:
+        """
         kwargs.pop('trainable', None)
-        super().__init__(
-            input_shape=input_shape, trainable=True, name=name, **kwargs
-        )
+        if input_shape is not None:
+            kwargs['input_shape'] = input_shape
+        super().__init__(trainable=True, name=name, **kwargs)
+
+        self.__index = index
 
         self.__shape = input_shape
 
@@ -77,23 +87,33 @@ class PipelineInputLayer(PipelineLayer):
                     tf.zeros((1,)), dy,
                     receiver=self.previous_stage_rank,
                     msg=json.dumps({
-                        'code': BaseTrainingStage.MessageCode.BPROP_GRAD.value
+                        'code': BaseTrainingStage.MessageCode.BPROP_GRAD.value,
+                        'index': self.__index
                     }),
-                    communicator_id=self.communicator.id
+                    communicator_id=self.communicator.id,
+                    name=f'pipeline-input-{self.__index}'
                 )
                 return None, fake_grad
 
-            return x, grad
+            return tf.identity(x), grad
 
         self.__input_grad_fn = input_grad
         self.__fake_kernel = None
 
     def build(self, input_shape):
         self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
-        super().build(input_shape)
+        if self.__shape is None:
+            self.__shape = input_shape[1:]
+        self.built = True
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0],) + self.__shape
+        if self.__shape is None:
+            self.__shape = input_shape[1:]
+        else:
+            assert self.__shape == input_shape[1:]
+        return input_shape
 
     def call(self, inputs, **kwargs):
+        if self.__shape is None:
+            self.__shape = inputs.shape[1:]
         return self.__input_grad_fn(inputs, self.__fake_kernel)
