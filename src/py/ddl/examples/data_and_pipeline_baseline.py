@@ -1,7 +1,8 @@
 """
-keras_pipeline.py的模型的单机版本, 作为对比
+data_and_pipeline_*.py的模型的单机版本, 作为对比
 """
-
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, \
+    MaxPooling2D, Dropout, Reshape
 import tensorflow as tf
 
 
@@ -9,7 +10,7 @@ def main():
     (mnist_images, mnist_labels), _ = \
         tf.keras.datasets.mnist.load_data(path='mnist.npz')
 
-    batch_size = 200
+    batch_size = 1000
     samples = mnist_images.shape[0]
 
     def data_generator():
@@ -22,12 +23,15 @@ def main():
             yield inputs, labels
 
     mnist_model = tf.keras.Sequential([
-        tf.keras.layers.Flatten(input_shape=(28, 28)),
-        tf.keras.layers.Dense(784, activation='relu'),
-        tf.keras.layers.Dense(196, activation='relu'),
-        tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.Dense(256, activation='relu'),
-        tf.keras.layers.Dense(10, activation='softmax')
+        Reshape(input_shape=(28, 28), target_shape=(28, 28, 1)),
+        Conv2D(32, [3, 3], activation='relu'),
+        Conv2D(64, [3, 3], activation='relu'),
+        MaxPooling2D(pool_size=(2, 2)),
+        Dropout(0.25),
+        Flatten(),
+        Dense(128, activation='relu'),
+        Dropout(0.5),
+        Dense(10, activation='softmax')
     ])
 
     mnist_model.compile(loss=tf.losses.SparseCategoricalCrossentropy(),
@@ -36,7 +40,7 @@ def main():
 
     mnist_model.fit(
         data_generator(), steps_per_epoch=samples // batch_size,
-        epochs=24, verbose=1
+        epochs=5, verbose=1
     )
 
 
