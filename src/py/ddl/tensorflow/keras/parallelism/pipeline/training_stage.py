@@ -664,7 +664,7 @@ class StageWithPreviousStage(BaseTrainingStage, metaclass=abc.ABCMeta):
         return result
 
 
-class FirstTrainingStage(StageWithNextStage):
+class InputTrainingStage(StageWithNextStage):
     def __init__(
             self,
             pipeline_model_id: int,
@@ -846,7 +846,7 @@ class IntermediateTrainingStage(StageWithPreviousStage, StageWithNextStage):
         return self._history
 
 
-class LastTrainingStage(StageWithPreviousStage):
+class OutputTrainingStage(StageWithPreviousStage):
     """
     最后一个训练阶段, 负责请求前向传播和
     """
@@ -872,7 +872,7 @@ class LastTrainingStage(StageWithPreviousStage):
         后向传播结束回调函数
         """
 
-        def __init__(self, stage: 'LastTrainingStage'):
+        def __init__(self, stage: 'OutputTrainingStage'):
             super().__init__()
             self.__stage = stage
 
@@ -984,9 +984,9 @@ class LastTrainingStage(StageWithPreviousStage):
                 or batch == self.__total_micro_batches - 1:
             info(f'batch end, micro batch: {batch}')
             self.__status_cond.acquire()
-            while self.__status != LastTrainingStage.Status.AFTER_FPROP:
+            while self.__status != OutputTrainingStage.Status.AFTER_FPROP:
                 self.__status_cond.wait()
-            self.__status = LastTrainingStage.Status.BATCH_END
+            self.__status = OutputTrainingStage.Status.BATCH_END
             self._micro_batch_inputs = []
             self.__status_cond.notify_all()
             self.__status_cond.release()

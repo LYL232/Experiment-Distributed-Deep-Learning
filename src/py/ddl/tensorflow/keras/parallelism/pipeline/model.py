@@ -2,7 +2,7 @@ from ddl.tensorflow.communicator import Communicator
 from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineInputLayer
 from ddl.tensorflow.data_dispatcher import DataDispatcher
 from ddl.tensorflow.keras.parallelism.pipeline.training_stage import \
-    FirstTrainingStage, IntermediateTrainingStage, LastTrainingStage
+    InputTrainingStage, IntermediateTrainingStage, OutputTrainingStage
 from ddl.tensorflow.keras.parallelism.data import \
     data_parallelism_distributed_optimizer_wrapper
 from ddl.tensorflow.keras.models.model import ModelPreBuilder, \
@@ -362,7 +362,7 @@ class PipelineModel(Model):
         if self.__is_first_stage:
             # 流水线模型第一个进程, 也即输入进程
             stage: PipelineStage = self.__stages[0]
-            training_stage = FirstTrainingStage(
+            training_stage = InputTrainingStage(
                 pipeline_model_id=self.__pipeline_model_id,
                 pipeline_communicator=self.pipeline_communicator,
                 stage_communicator=self.stage_communicator,
@@ -374,7 +374,7 @@ class PipelineModel(Model):
         elif self.__is_last_stage:
             # 流水线模型最后一个进程, 也即输出进程
             stage: PipelineStage = self.__stages[-1]
-            training_stage = LastTrainingStage(
+            training_stage = OutputTrainingStage(
                 pipeline_model_id=self.__pipeline_model_id,
                 pipeline_communicator=self.pipeline_communicator,
                 stage_communicator=self.stage_communicator,
