@@ -1,13 +1,11 @@
 from ddl.tensorflow.communicator import Communicator
-from ddl.tensorflow.keras.parallelism.pipeline import PipelineLayer
 from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineInputLayer
 from ddl.tensorflow.data_dispatcher import DataDispatcher
 from ddl.tensorflow.keras.parallelism.pipeline.training_stage import \
     FirstTrainingStage, IntermediateTrainingStage, LastTrainingStage
 from ddl.tensorflow.keras.parallelism.data import \
     data_parallelism_distributed_optimizer_wrapper
-from ddl.tensorflow.keras.models.model_prebuilder import ModelPreBuilder
-from ddl.tensorflow.keras.models.model import \
+from ddl.tensorflow.keras.models.model import ModelPreBuilder, \
     Sequential as PreBuilderSequential, \
     Model as PreBuilderModel
 from ddl.message import Message
@@ -33,7 +31,7 @@ def intermediate_loss(grad, output):
 
 class PipelineStage:
     """
-    流水线模型的组成部分, 非第一阶段要求第一层是PipelineLayer的实例
+    流水线模型的组成部分, 非第一阶段要求第一层是PipelineInputLayer的实例
     """
 
     def __init__(self, builder: ModelPreBuilder):
@@ -83,7 +81,7 @@ class PipelineModel(Model):
         """
         super().__init__(*args, *kwargs)
         assert len(stages) > 1, 'pipeline model contains at least 2 stages'
-        # 检查是否除了第一个阶段都有PipelineLayer作为第一层
+        # 检查是否除了第一个阶段都有PipelineInputLayer作为第一层
         for i in range(1, len(stages)):
             stage = stages[i]
             assert isinstance(stage, PipelineStage)
@@ -254,12 +252,12 @@ class PipelineModel(Model):
                     )
 
                 if not self.__is_first_stage > 0:
-                    # 编译PipelineLayer
+                    # 编译PipelineInputLayer
                     pipeline_layers = stage.pipeline_layers
                     assert pipeline_layers is not None, \
                         'not first stage must have pipeline layer'
                     for each in pipeline_layers:
-                        assert isinstance(each, PipelineLayer)
+                        assert isinstance(each, PipelineInputLayer)
                         each.compile_by_pipeline_model(self)
 
                 # 进行数据并行, 分割stage通信域

@@ -3,70 +3,27 @@ from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.keras.parallelism.pipeline.training_stage \
     import BaseTrainingStage
 from tensorflow.keras.layers import Layer
-from tensorflow.python.framework.ops import Tensor
 import tensorflow as tf
 import abc
 import json
 
 
-class PipelineLayer(Layer, metaclass=abc.ABCMeta):
+class PipelineInputLayer(Layer, metaclass=abc.ABCMeta):
 
     def __init__(
-            self, trainable=True, name=None, dtype=None, dynamic=False,
-            **kwargs):
+            self, name=None, dtype=None, dynamic=False,
+            index: int = 0, input_shape=None,
+            **kwargs
+    ):
+        if input_shape is not None:
+            kwargs['input_shape'] = input_shape
         super().__init__(
-            trainable=trainable, name=name, dtype=dtype, dynamic=dynamic,
+            trainable=True, name=name, dtype=dtype, dynamic=dynamic,
             **kwargs
         )
         self.__compiled = False
         self.__previous_stage_rank = None
         self.__communicator = None
-
-    @property
-    def previous_stage_rank(self) -> int:
-        """
-        @return: 上一阶段的模型所属的rank, 如果是第一阶段的模型, 则返回-1
-        """
-        assert self.__compiled, 'access previous stage rank before' \
-                                ' compile pipeline model'
-        return self.__previous_stage_rank
-
-    @property
-    def communicator(self) -> Communicator:
-        assert self.__compiled, 'access communicator before' \
-                                ' compile pipeline model'
-        return self.__communicator
-
-    def compile_by_pipeline_model(self, pipeline_model) -> None:
-        """
-        由PipelineModel对象编译即将完成时对此对象执行的方法, 不要直接调用,
-        参数设置成PipelineModel对象也正是此意
-        @param pipeline_model: 即将编译完成的PipelineModel
-        @return: None
-        """
-        from ddl.tensorflow.keras.parallelism.pipeline.model import \
-            PipelineModel
-        assert isinstance(pipeline_model, PipelineModel)
-        self.__previous_stage_rank = \
-            pipeline_model.pipeline_communicator.rank - 1
-        self.__communicator = pipeline_model.pipeline_communicator
-        self.__compiled = True
-
-
-class PipelineInputLayer(PipelineLayer):
-    def __init__(
-            self, input_shape: tuple = None, name: str = None,
-            index: int = 0, **kwargs):
-        """
-        @param input_shape: 输入形状
-        @param name: 名字
-        @param index: 输入的索引, 当模型有输入时, 此项才可能非0
-        @param kwargs:
-        """
-        kwargs.pop('trainable', None)
-        if input_shape is not None:
-            kwargs['input_shape'] = input_shape
-        super().__init__(trainable=True, name=name, **kwargs)
 
         self.__index = index
 
@@ -99,6 +56,36 @@ class PipelineInputLayer(PipelineLayer):
 
         self.__input_grad_fn = input_grad
         self.__fake_kernel = None
+
+    @property
+    def previous_stage_rank(self) -> int:
+        """
+        @return: 上一阶段的模型所属的rank, 如果是第一阶段的模型, 则返回-1
+        """
+        assert self.__compiled, 'access previous stage rank before' \
+                                ' compile pipeline model'
+        return self.__previous_stage_rank
+
+    @property
+    def communicator(self) -> Communicator:
+        assert self.__compiled, 'access communicator before' \
+                                ' compile pipeline model'
+        return self.__communicator
+
+    def compile_by_pipeline_model(self, pipeline_model) -> None:
+        """
+        由PipelineModel对象编译即将完成时对此对象执行的方法, 不要直接调用,
+        参数设置成PipelineModel对象也正是此意
+        @param pipeline_model: 即将编译完成的PipelineModel
+        @return: None
+        """
+        from ddl.tensorflow.keras.parallelism.pipeline.model import \
+            PipelineModel
+        assert isinstance(pipeline_model, PipelineModel)
+        self.__previous_stage_rank = \
+            pipeline_model.pipeline_communicator.rank - 1
+        self.__communicator = pipeline_model.pipeline_communicator
+        self.__compiled = True
 
     def build(self, input_shape):
         self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)

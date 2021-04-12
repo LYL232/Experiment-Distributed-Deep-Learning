@@ -1,1 +1,1 @@
-from .layer import PipelineLayer, PipelineInputLayer
+from .layer import PipelineInputLayer
