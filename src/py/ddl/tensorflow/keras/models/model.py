@@ -4,26 +4,34 @@ from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineLayer, \
 from tensorflow.keras.models import Sequential as KerasSequential, Model as \
     KerasModel
 from tensorflow.keras.layers import Input
-from tensorflow.python.framework.ops import Tensor
 
 
 class Model(ModelPreBuilder):
     def __init__(
             self,
             graph_def: callable,
-            inputs: Tensor or tuple = None
+            input_shape: tuple = None
     ):
         """
         keras的模型预构建
-        @param inputs: 模型的原始输入
         @param graph_def: 模型的层级结构定义函数,
          接收一个参数, 这个参数为inputs张量或者数个inputs张量元组,
          返回一个输出张量或者多个输出张量元组
+        @param input_shape: 输入形状, 当模型时第一阶段模型时需要, 将会创建一个Input张量
         """
         assert callable(graph_def)
 
-        self.__inputs = inputs
-        self.__pipelined_inputs = inputs
+        if input_shape is not None:
+            if isinstance(input_shape[0], (tuple or list)):
+                self.__inputs = []
+                for each in input_shape:
+                    self.__inputs.append(Input(shape=each))
+                self.__inputs = tuple(self.__inputs)
+            else:
+                self.__inputs = (Input(shape=input_shape),)
+        else:
+            self.__inputs = None
+        self.__pipelined_inputs = self.__inputs
 
         def model_def():
             assert self.__pipelined_inputs is not None

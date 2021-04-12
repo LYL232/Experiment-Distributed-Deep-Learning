@@ -1,4 +1,4 @@
-from tensorflow.keras.layers import Dense, Flatten, Input, Reshape, Conv2D, \
+from tensorflow.keras.layers import Dense, Flatten, Reshape, Conv2D, \
     MaxPooling2D, Dropout, concatenate
 import tensorflow as tf
 
@@ -43,20 +43,24 @@ def main():
         branch_0 = Dropout(0.25)(branch_0)
         branch_0 = Flatten()(branch_0)
 
+        branch_2 = Dense(32, activation='relu')(branch_0)
+
         branch_1 = Dense(64, activation='relu')(branch_1)
         branch_1 = Dropout(0.5)(branch_1)
         branch_1 = Flatten()(branch_1)
-        merged = concatenate([branch_0, branch_1])
+
+        return branch_0, branch_1, branch_2
+
+    def third_stage_model(branch_0, branch_1, branch_2):
+        merged = concatenate([branch_0, branch_1, branch_2])
         outputs = Dense(10, activation='softmax')(merged)
         return outputs
 
     model = PipelineModel([
-        PipelineStage(
-            # 第一层需要有Input张量
-            Model(first_stage_model,
-                  Input(shape=(28, 28), name='original-input'))
-        ),
-        PipelineStage(Model(second_stage_model))
+        # 第一层需要有Input张量
+        PipelineStage(Model(first_stage_model, input_shape=(28, 28))),
+        PipelineStage(Model(second_stage_model)),
+        PipelineStage(Model(third_stage_model))
     ])
 
     # 进行数据分发(可选)
