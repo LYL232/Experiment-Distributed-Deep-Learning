@@ -15,6 +15,33 @@ MPIMessageController::MPIMessageController(std::shared_ptr<MPIBackend> backend) 
         mutex_(PTHREAD_MUTEX_INITIALIZER), backend_(std::move(backend)),
         buffer_(nullptr), bufferSize_(0), statusBuffer_() {}
 
+Message *MPIMessageController::broadcastMessage(
+        const Message &message, int root, const std::shared_ptr<Communicator> &communicator) {
+
+    size_t len = message.length;
+    if (communicator->rank() == root) {
+        memcpy(buffer_, message.msg_ptr, len);
+    }
+
+    pthread_mutex_lock(&mutex_);
+
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATE_MESSAGE_LOG_MESSAGE
+    GLOBAL_INFO_WITH_THREAD_ID(
+            "before broadcasting message: " << message.msg_ptr << ", root " << root)
+#endif
+    const auto &comm = dynamic_cast<const MPICommunicator &>(*communicator);
+    // 先传输字符串的长度
+    MPI_Bcast(&len, sizeof(size_t), MPI_BYTE, root, comm.mpiComm());
+    checkBuffer_(len);
+    MPI_Bcast(buffer_, len, MPI_CHAR, root, comm.mpiComm());
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATE_MESSAGE_LOG_MPI_CALLS
+    GLOBAL_INFO_WITH_THREAD_ID("mpi brocasted Message")
+#endif
+    auto *res = new Message(buffer_, root, len);
+    pthread_mutex_unlock(&mutex_);
+    return res;
+}
+
 void MPIMessageController::sendMessage(
         const Message &message, int receiver,
         const std::shared_ptr<Communicator> &communicator) {
@@ -25,7 +52,6 @@ void MPIMessageController::sendMessage(
     GLOBAL_INFO_WITH_THREAD_ID(
             "before sending message: " << message.msg_ptr << ", to " << receiver)
 #endif
-    checkBuffer_(len);
     const auto &comm = dynamic_cast<const MPICommunicator &>(*communicator);
 
     // 先传输字符串的长度

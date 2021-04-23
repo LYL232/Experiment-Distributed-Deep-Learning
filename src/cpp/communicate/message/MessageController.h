@@ -13,6 +13,9 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class MessageController {
 public:
+    virtual Message *broadcastMessage(
+            const Message &message, int root, const std::shared_ptr<Communicator> &communicator);
+
     virtual void sendMessage(const Message &message, int receiver, const std::shared_ptr<Communicator> &communicator);
 
     virtual Message *listen(const Communicator &communicator);

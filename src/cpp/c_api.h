@@ -28,6 +28,8 @@ void destroy_message(Message *messagePtr);
 // todo: 返回状态码
 void send_message(const char *msg, int receiverRank, Communicator::ID communicatorId, size_t len);
 
+Message *broadcast_message(const char *msg, int root, Communicator::ID communicatorId, size_t len);
+
 Communicator::ID split_communicator(Communicator::ID communicatorId, int color, int key);
 
 void detach_communicator(Communicator::ID communicatorId);

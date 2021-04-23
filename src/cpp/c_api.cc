@@ -38,6 +38,12 @@ void send_message(const char *msg, int receiverRank, Communicator::ID id, size_t
     );
 }
 
+Message *broadcast_message(const char *msg, int root, Communicator::ID id, size_t len) {
+    auto &global = Global::get();
+    const auto &comm = global.getCommunicator(id);
+    return global.messageController().broadcastMessage(Message(msg, root, len), root, comm);
+}
+
 Communicator::ID split_communicator(Communicator::ID id, int color, int key) {
     return Global::get().getCommunicator(id)->split(color, key)->id();
 }

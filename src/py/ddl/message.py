@@ -1,11 +1,11 @@
 from ctypes import *
-from ddl.tensorflow.cpp_backend import CPPBackend, _CMessage
+from ddl.tensorflow.cpp_backend import CPPBackend, CMessage
 from ddl.tensorflow.communicator import Communicator
 
 
 class Message:
 
-    def __init__(self, c_msg: _CMessage, is_bytes: bool = False):
+    def __init__(self, c_msg: CMessage, is_bytes: bool = False):
         self.__is_bytes = is_bytes
         self.__msg = string_at(c_msg.msg, c_msg.length)
         if not is_bytes:
@@ -26,6 +26,20 @@ class Message:
 
     def __str__(self) -> str:
         return f'Message{{msg: {self.__msg}, sender: {self.__sender}}}'
+
+    @staticmethod
+    def broadcast(
+            msg: str, root: int,
+            communicator: Communicator = Communicator.world()) -> 'Message':
+        sending_bytes = bytes(msg, encoding='UTF-8')
+        msg_ptr = CPPBackend.c_api().broadcast_message(
+            create_string_buffer(sending_bytes), root,
+            communicator.id, len(sending_bytes)
+        )
+        message = Message(msg_ptr.contents)
+        # 释放new出来的内存
+        CPPBackend.c_api().destroy_message(msg_ptr)
+        return message
 
     @staticmethod
     def send(

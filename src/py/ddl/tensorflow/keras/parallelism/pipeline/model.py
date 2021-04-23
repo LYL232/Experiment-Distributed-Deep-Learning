@@ -1,20 +1,20 @@
 from ddl.tensorflow.communicator import Communicator
-from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineInputLayer
 from ddl.tensorflow.data_dispatcher import DataDispatcher
-from ddl.tensorflow.keras.parallelism.pipeline.training_stage import \
-    InputTrainingStage, IntermediateTrainingStage, OutputTrainingStage
 from ddl.tensorflow.keras.parallelism.data import \
     data_parallelism_distributed_optimizer_wrapper
-from ddl.tensorflow.keras.models.model import ModelPreBuilder, \
-    Sequential as PreBuilderSequential, \
-    Model as PreBuilderModel
-from ddl.message import Message
-import json
+from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe, \
+    PipelineInput
+from ddl.tensorflow.keras.parallelism.pipeline.training import \
+    TrainingExecutor
+from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
+    MicroBatchController
+from ddl.tensorflow import util
 
 from sys import stderr
 from tensorflow.keras.models import Model as Model
 from tensorflow.keras.optimizers import Optimizer
 from tensorflow.keras.callbacks import History
+from tensorflow.python.keras import backend
 import tensorflow as tf
 
 
@@ -29,75 +29,137 @@ def intermediate_loss(grad, output):
     return tf.reduce_mean(tf.multiply(grad, output), axis=None)
 
 
-class PipelineStage:
-    """
-    流水线模型的组成部分, 非第一阶段要求第一层是PipelineInputLayer的实例
-    """
-
-    def __init__(self, builder: ModelPreBuilder):
-        """
-        @param builder: 模型的预构建模型
-        """
-        assert isinstance(builder, ModelPreBuilder)
-        self.__model = None
-        self.__builder = builder
-        self.__is_first_stage = None
-
-    @property
-    def pipeline_layers(self) -> tuple:
-        """
-        @return: 当该对象是第一Stage时, 返回None, 否则, 返回其连接上一Stage的层
-        """
-        return self.__builder.pipeline_layers
-
-    @property
-    def model(self) -> Model:
-        return self.__builder.model
-
-    @property
-    def builder(self) -> ModelPreBuilder:
-        return self.__builder
-
-    @property
-    def input_shape(self) -> tuple:
-        return self.model.input_shape
-
-    @property
-    def output_shape(self) -> tuple:
-        return self.model.output_shape
-
-
 class PipelineModel(Model):
     """
-    流水线模型
+    流水线通用模型
     """
 
-    def __init__(self, stages: list, *args, **kwargs):
-        """
-        在PipelineModel定义时, 只在主进程上进行
-        @param stages: 分配在每个机器上的阶段
-        @param try_data_parallelism: 是否根据通信域进程数来尝试进行数据并行
-        @param communicator: 通信域
-        """
-        super().__init__(*args, *kwargs)
-        assert len(stages) > 1, 'pipeline model contains at least 2 stages'
-        # 检查是否除了第一个阶段都有PipelineInputLayer作为第一层
-        for i in range(1, len(stages)):
-            stage = stages[i]
-            assert isinstance(stage, PipelineStage)
+    def __init__(
+            self,
+            inputs: tuple or list or PipelinePipe,
+            outputs: tuple or list or PipelinePipe,
+            *args, **kwargs
+    ):
+        super().__init__(*args, **kwargs)
 
-        # 注意到外部调用后到compile之前
-        # 不能修改stages, 因为是引用 可能会导致错误运行, 如果要深拷贝, 比较麻烦
-        self.__stages = stages
-        self.__processes_required = len(stages)
+        if isinstance(inputs, PipelinePipe):
+            inputs = (inputs,)
+        else:
+            assert isinstance(inputs, (tuple, list))
+            assert len(inputs) > 0
+            assert all([isinstance(each, PipelinePipe) for each in inputs])
+        if isinstance(outputs, PipelinePipe):
+            outputs = (outputs,)
+        else:
+            assert isinstance(outputs, (tuple, list))
+            assert len(outputs) > 0
+            assert all([isinstance(each, PipelinePipe) for each in outputs])
+
+        self.__inputs_index = {}
+        self.__outputs_index = {}
+        for i in range(len(inputs)):
+            self.__inputs_index[id(inputs[i])] = i
+        for i in range(len(outputs)):
+            self.__outputs_index[id(outputs[i])] = i
+
+        # inputs和outputs不能有重复元素
+        assert len(self.__inputs_index) == len(inputs), \
+            'duplicate inputs'
+        assert len(self.__outputs_index) == len(outputs), \
+            'duplicate outputs'
+
+        # inputs和outputs交集必须为空
+        assert len(set(self.__inputs_index.keys()).intersection(
+            set(self.__outputs_index))) == 0, \
+            'inputs and outputs must not have the same tensor'
+
+        # 检查所有inputs没有来源
+        for stage in inputs:
+            assert stage.comes_from is None
+        # 检查所有的outputs没有接收方
+        for stage in outputs:
+            assert len(stage.send_to) == 0
+
+        # 先跑一遍图定义, 用id作为唯一键, 遍历所有tensor
+        self.__total_stages = {}
+
+        queue = []
+        self.__input_stages_id_set = set()
+        # 找到所有input张量连接的阶段, 找到输入阶段, 要求其所有输入张量必须没有comes_from
+        for pipe in inputs:
+            for stage in pipe.send_to:
+                # 如果已经是输入阶段, 或者其存在任何输入来自于其他阶段, 那么它肯定不是输入
+                # 阶段, 跳过
+                if id(stage) in self.__input_stages_id_set or any(
+                        each.comes_from is not None
+                        for each in stage.input_pipes
+                ):
+                    continue
+                queue.append(stage)
+                self.__input_stages_id_set.add(id(stage))
+
+        # 如果没有输入阶段, 那么整个图定义就是无效的
+        assert len(queue) > 0, \
+            'there are no input stage in the graph definition'
+
+        while len(queue) > 0:
+            stage = queue.pop(0)
+            self.__total_stages[id(stage)] = stage
+            for pipe in stage.output_pipes:
+                if len(pipe.send_to) == 0:
+                    assert id(pipe) in self.__outputs_index.keys(), \
+                        'there exists tensor that does not connect to next' \
+                        ' tensor but not in outputs'
+                else:
+                    for stage in pipe.send_to:
+                        if id(stage) in self.__total_stages.keys():
+                            continue
+                        self.__total_stages[id(stage)] = stage
+                        queue.append(stage)
+
+        # 记录每个stage的入度
+        in_degree = {}
+        queue = []
+        for stage in self.__total_stages.values():
+            if all(pipe.comes_from is None for pipe in stage.input_pipes):
+                assert id(stage) in self.__input_stages_id_set, \
+                    'there exists a PipelineTensor not in inputs, but' \
+                    ' also dose not comes from other PipelineTensor'
+                queue.append(stage)
+                in_degree[id(stage)] = 0
+            else:
+                in_degree[id(stage)] = len(stage.input_pipes)
+
+        self.__stages_rank = {}
+        self.__stages = []
+        # 从inputs到outputs跑一遍拓扑排序, 得出一个拓扑序
+        while len(queue) > 0:
+            stage = queue.pop(0)
+            stage.attach_pipeline_model(self, len(self.__stages_rank))
+            self.__stages_rank[id(stage)] = len(self.__stages_rank)
+            self.__stages.append(stage)
+            for output in stage.output_pipes:
+                for next_stage in output.send_to:
+                    in_degree[id(next_stage)] -= 1
+                    if in_degree[id(next_stage)] > 0:
+                        continue
+                    queue.append(next_stage)
+
+        # 如果入度为0的节点数不等于图中所有的PipelineTensor, 说明有回路
+        assert len(self.__stages_rank) == len(self.__total_stages), \
+            'can not define a pipeline tensor graph with a ring sub graph'
+
+        # todo: 在此可以进行各个阶段间的输入输出形状匹配检查
+
+        self.__processes_required = len(self.__total_stages)
 
         # 以下属性由compile赋值
         # 整体模型运行的通信域
         self.__model_comm = None
         # 正在执行的流水线并行模型总数
         self.__pipeline_models = None
-        # 本节点所属PipelineModel的id, 应用数据并行时可能不为0, 否则为0
-        self.__pipeline_model_id = None
+        # 本节点所属PipelineModel的rank, 应用数据并行时可能不为0, 否则为0
+        self.__pipeline_model_rank = None
         # 此Pipeline模型运行的通信域
         self.__pipeline_comm = None
         # 本进程所在Stage的通信域, 由所有pipeline模型的相同Stage组成
@@ -105,14 +167,12 @@ class PipelineModel(Model):
         # 当分配给self.__pipeline_comm的进程数大于所需进程数时, 只使用rank小的进程
         # 这些进程的self.__work标记为True, 否则为False, 代表不工作
         self.__work = None
-        # 是否是第一个阶段
-        self.__is_first_stage = None
-        # 是否是最后一个阶段
-        self.__is_last_stage = None
 
         self._is_compiled = False
-        # 本进程执行的keras.Model对象
-        self.__executing_model = None
+
+        self.__session = backend.get_session()
+
+        self.__micro_batch_controller = None
 
     @property
     def processes_require(self) -> int:
@@ -139,13 +199,26 @@ class PipelineModel(Model):
         assert self.__work, 'this process does not work'
         return self.__stage_comm
 
+    @property
+    def pipeline_model_rank(self) -> int:
+        assert self.__work is not None, \
+            'access pipeline model communicator before compiling'
+        assert self.__work, 'this process does not work'
+        return self.__pipeline_model_rank
+
     def compile(
             self, optimizer: str or Optimizer = 'rmsprop', loss=None,
             metrics=None,
             loss_weights=None, sample_weight_mode=None, weighted_metrics=None,
             **kwargs):
+        from ddl.tensorflow.keras.parallelism.pipeline.stage import \
+            PipelineStage
+        if loss is not None and not isinstance(loss, (tuple, list)):
+            loss = (loss,)
+        if metrics is not None and not isinstance(metrics, (tuple, list)):
+            metrics = (metrics,)
 
-        self.__pipeline_model_id = 0
+        self.__pipeline_model_rank = 0
         self.__model_comm = kwargs.pop('communicator', Communicator.world())
         # 是否尝试数据并行
         try_data_parallelism = kwargs.pop('try_data_parallelism', True)
@@ -177,12 +250,15 @@ class PipelineModel(Model):
                 try_data_parallelism = False
             else:
                 # 进程数量可以进行数据并行, 进行通信域分割
-                self.__pipeline_model_id = \
+                self.__pipeline_model_rank = \
                     self.__model_comm.rank // self.processes_require
                 self.__pipeline_comm: Communicator = \
                     self.__pipeline_comm.split_communicator(
-                        self.__pipeline_model_id
+                        self.__pipeline_model_rank
                     )
+
+        # 是否真正执行动作
+        self.__work = self.__pipeline_comm.rank < self.processes_require
 
         # 获得通信域后, 每个Stage在self.__stages里的下标就是执行该Stage的在该通讯域下的rank,
         # 但是由于allreduce需要通信域内的所有进程参与, 所以必须保证通信域的大小正好是stages的数量
@@ -190,11 +266,10 @@ class PipelineModel(Model):
             stderr.write(
                 f'WARNING: each pipeline model needs '
                 f'{self.processes_require} processes, but pipeline-model-'
-                f'{self.__pipeline_model_id} got '
+                f'{self.__pipeline_model_rank} got '
                 f'{self.__pipeline_comm.size} processes, so the last '
                 f'few unnecessary processes have nothing to do\n')
-            # 是否真正执行动作
-            self.__work = self.__pipeline_comm.rank < self.processes_require
+
             # 继续将这个通信域分割, 会有一个通信域包含正好所需的进程数量
             self.__pipeline_comm = self.__pipeline_comm.split_communicator(
                 0 if self.__work else 1
@@ -202,92 +277,52 @@ class PipelineModel(Model):
             if not self.__work:
                 stderr.write(
                     f'WARNING: process has no thing to do, in '
-                    f'pipeline-model-{self.__pipeline_model_id}, global rank'
+                    f'pipeline-model-{self.__pipeline_model_rank}, global rank'
                     f'{self.__model_comm.size}\n')
-                self.__is_first_stage = False
-                self.__is_last_stage = False
-        else:
-            # 所有进程都投入工作
-            self.__work = True
 
         if self.__work:
-            self.__is_first_stage = self.__pipeline_comm.rank == 0
-            self.__is_last_stage = \
-                self.__pipeline_comm.rank == len(self.__stages) - 1
-            if self.__pipeline_comm.rank < len(self.__stages):
-                stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
-
-                builder = stage.builder
-
-                # 流水线前一阶段通知后一阶段自己的输出形状, 后一阶段将其作为输入形状,
-                # 并插入流水线层
-                if not self.__is_first_stage:
-                    # 是第一阶段, 就不必收听上一阶段的输出形状
-                    msg = Message.listen(self.__pipeline_comm).msg
-                    input_shape = json.loads(msg)
-                    # 插入流水线层
-                    if isinstance(builder, PreBuilderSequential):
-                        builder.insert_pipeline_input_layer(
-                            PipelineInputLayer(input_shape=input_shape)
-                        )
-                    elif isinstance(builder, PreBuilderModel):
-                        builder.set_inputs_shape(input_shape)
-
-                if not self.__is_last_stage:
-                    # 不是最后一阶段, 往下传递自己的输出形状
-                    output_shape = list(stage.output_shape)
-
-                    if isinstance(output_shape[0], tuple) or \
-                            isinstance(output_shape[0], list):
-                        for i in range(len(output_shape)):
-                            output_shape[i] = list(output_shape[i][1:])
-                    else:
-                        output_shape = list(output_shape[1:])
-
-                    msg = json.dumps(output_shape)
-                    Message.send(
-                        msg,
-                        self.__pipeline_comm.rank + 1,
-                        self.__pipeline_comm
-                    )
-
-                if not self.__is_first_stage > 0:
-                    # 编译PipelineInputLayer
-                    pipeline_layers = stage.pipeline_layers
-                    assert pipeline_layers is not None, \
-                        'not first stage must have pipeline layer'
-                    for each in pipeline_layers:
-                        assert isinstance(each, PipelineInputLayer)
-                        each.compile_by_pipeline_model(self)
-
-                # 进行数据并行, 分割stage通信域
-                self.__stage_comm = \
-                    self.__model_comm.split_communicator(
-                        self.__pipeline_comm.rank, self.__pipeline_model_id
-                    )
-                if try_data_parallelism:
-                    # 获取数据并行分布式优化器
-                    optimizer = data_parallelism_distributed_optimizer_wrapper(
-                        optimizer, self.__stage_comm
-                    )
-
-                self.__executing_model: Model = stage.model
-
-                if not self.__is_last_stage:
-                    loss = intermediate_loss
-
-                self.__executing_model.compile(
-                    optimizer=optimizer,
-                    loss=loss,
-                    metrics=metrics if self.__is_last_stage else [loss],
-                    loss_weights=loss_weights,
-                    sample_weight_mode=sample_weight_mode,
-                    weighted_metrics=weighted_metrics,
-                    # 设置`experimental_run_tf_function=False` 让TensorFlow
-                    # 使用传入的opt计算梯度
-                    experimental_run_tf_function=False,
-                    **kwargs
+            stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
+            # 加载本阶段模型
+            stage.build()
+            # 进行数据并行, 分割stage通信域
+            self.__stage_comm = \
+                self.__model_comm.split_communicator(
+                    self.__pipeline_comm.rank, self.__pipeline_model_rank
                 )
+            if try_data_parallelism:
+                # 获取数据并行分布式优化器
+                optimizer = data_parallelism_distributed_optimizer_wrapper(
+                    optimizer, self.__stage_comm
+                )
+
+            output_loss = []
+            metrics_list = []
+            for i in range(len(stage.output_pipes)):
+                output = stage.output_pipes[i]
+                if id(output) in self.__outputs_index.keys():
+                    index = self.__outputs_index[id(output)]
+                    output_loss.append(loss[index])
+                    metrics_list.append(metrics[index])
+                else:
+                    output_loss.append(intermediate_loss)
+                    metrics_list.append(intermediate_loss)
+
+            self.__micro_batch_controller = MicroBatchController(
+                stage, optimizer, self.__session
+            )
+
+            stage.model.compile(
+                optimizer=optimizer,
+                loss=output_loss,
+                metrics=metrics_list,
+                loss_weights=loss_weights,
+                sample_weight_mode=sample_weight_mode,
+                weighted_metrics=weighted_metrics,
+                # 设置`experimental_run_tf_function=False` 让TensorFlow
+                # 使用传入的opt计算梯度
+                experimental_run_tf_function=False,
+                **kwargs
+            )
 
         self._is_compiled = True
 
@@ -303,7 +338,8 @@ class PipelineModel(Model):
             validation_freq=1,
             max_queue_size=10, workers=1,
             use_multiprocessing=False,
-            micro_batch_size: int = None
+            micro_batch_size: int = None,
+            clear_session: bool = True
     ) -> History or list:
         """
         启动训练进程, 所有执行非最后一个Stage的进程将监听消息,
@@ -328,19 +364,49 @@ class PipelineModel(Model):
         @param workers:
         @param use_multiprocessing:
         @param micro_batch_size: 微批次大小, 如果为None则代表不用微批次
+        @param clear_session: 是否在训练结束后清除执行会话
         @return: Model.fit(...), 如果本进程不工作, 则None
         """
+        from ddl.tensorflow.keras.parallelism.pipeline.stage import \
+            PipelineStage
         assert self._is_compiled, f'{Communicator.world().rank} not compiled'
         if not self.__work:
             return
 
         assert 0 <= self.__pipeline_comm.rank < self.processes_require
+        stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
+        pipeline_inputs_data_indexes = []
+        pipeline_targets_data_indexes = []
 
         if isinstance(x, DataDispatcher):
-            x = self.__dispatch_data(x, 1 if self.__is_first_stage else 0)
+            for each in stage.input_pipes:
+                if id(each) in self.__inputs_index.keys():
+                    pipeline_inputs_data_indexes.append(
+                        self.__inputs_index[id(each)]
+                    )
+                else:
+                    pipeline_inputs_data_indexes.append(None)
+            x = self.__dispatch_data(
+                x, tuple(filter(
+                    lambda a: a is not None,
+                    pipeline_inputs_data_indexes
+                ))
+            )
 
         if isinstance(y, DataDispatcher):
-            y = self.__dispatch_data(y, 1 if self.__is_last_stage else 0)
+            for each in stage.output_pipes:
+                if id(each) in self.__outputs_index.keys():
+                    pipeline_targets_data_indexes.append(
+                        self.__outputs_index[id(each)]
+                    )
+                else:
+                    pipeline_targets_data_indexes.append(None)
+            y = self.__dispatch_data(
+                y, tuple(filter(
+                    lambda a: a is not None,
+                    pipeline_targets_data_indexes
+                ))
+            )
 
         fit_args = {
             'callbacks': callbacks,
@@ -357,73 +423,39 @@ class PipelineModel(Model):
             'max_queue_size': max_queue_size,
             'workers': workers,
             'use_multiprocessing': use_multiprocessing,
+            'verbose': verbose
         }
 
-        if self.__is_first_stage:
-            # 流水线模型第一个进程, 也即输入进程
-            stage: PipelineStage = self.__stages[0]
-            training_stage = InputTrainingStage(
-                pipeline_model_id=self.__pipeline_model_id,
-                pipeline_communicator=self.pipeline_communicator,
-                stage_communicator=self.stage_communicator,
-                model=self.__executing_model,
-                next_stage_input_shape=stage.output_shape,
-                inputs=x,
-                **fit_args
-            )
-        elif self.__is_last_stage:
-            # 流水线模型最后一个进程, 也即输出进程
-            stage: PipelineStage = self.__stages[-1]
-            training_stage = OutputTrainingStage(
-                pipeline_model_id=self.__pipeline_model_id,
-                pipeline_communicator=self.pipeline_communicator,
-                stage_communicator=self.stage_communicator,
-                previous_stage_output_shape=stage.input_shape,
-                model=self.__executing_model,
-                targets=y,
-                verbose=verbose,
-                batch_size=batch_size, epochs=epochs,
-                micro_batch_size=micro_batch_size,
-                **fit_args
-            )
-        else:
-            # 流水线中间进程
-            stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
-            training_stage = IntermediateTrainingStage(
-                pipeline_model_id=self.__pipeline_model_id,
-                pipeline_communicator=self.pipeline_communicator,
-                stage_communicator=self.stage_communicator,
-                previous_stage_output_shape=stage.input_shape,
-                model=self.__executing_model,
-                next_stage_input_shape=stage.output_shape,
-                **fit_args
-            )
-        return training_stage.run()
-
-    def predict(
-            self,
-            x, batch_size=None, verbose=0,
-            steps=None, callbacks=None,
-            max_queue_size=10, workers=1, use_multiprocessing=False):
-        if not self._is_compiled:
-            raise Exception('model has not been compiled')
-        if not self.__work:
-            return
+        res = TrainingExecutor(
+            stage, self.__micro_batch_controller,
+            x, pipeline_inputs_data_indexes,
+            y, pipeline_targets_data_indexes,
+            session=self.__session,
+            batch_size=batch_size, micro_batch_size=micro_batch_size,
+            epochs=epochs,
+            **fit_args
+        ).run()
+        if clear_session:
+            tf.keras.backend.clear_session()
+        return res
 
     @staticmethod
     def __dispatch_data(
-            data_dispatcher: DataDispatcher, need_data: int,
+            data_dispatcher: DataDispatcher,
+            data_indexes: tuple or list
     ):
         """
         1. 分割通信域, 将root_rank(保存有数据的进程号)和所有其他需要数据的rank分割到
         一个通信域内, 保证root_rank在新通信域内的rank是0
         2. 在需要进行广播的通信域内以0为根节点广播
         @param data_dispatcher: 进行操作的DispatchingData对象
-        @param need_data: 是否需要进行数据分发, 01值, 1表示需要, 0表示不需要
+        @param data_indexes: 所需数据的索引
         @return:
          当need_dispatch==1 时, DispatchingData.data(),
          否则 None
         """
+        need_data = 1 if len(data_indexes) > 0 else 0
+
         comm = data_dispatcher.communicator
         root = data_dispatcher.root_rank
 
@@ -440,5 +472,32 @@ class PipelineModel(Model):
         dispatch_comm = comm.split_communicator(dispatch_data, key=key)
 
         if dispatch_data == 1:
-            data_dispatcher.dispatch(dispatch_comm, 0, root_keep_data)
+            data_dispatcher.dispatch(
+                dispatch_comm, 0, data_indexes=data_indexes,
+                root_keep_data=root_keep_data
+            )
             return data_dispatcher.data
+        return None
+
+
+class PipelineSequentialModel(PipelineModel):
+    """
+    流水线序列模型
+    """
+
+    def __init__(self, stages: list, *args, **kwargs):
+        from ddl.tensorflow.keras.parallelism.pipeline.stage import \
+            PipelineStage
+        assert len(stages) > 0
+        assert all(isinstance(each, PipelineStage) for each in stages)
+
+        input_shape = util.formalize_shapes(stages[0].input_shape)
+        inputs = tuple(PipelineInput(shape=each) for each in input_shape)
+        sequential = inputs
+        for each in stages:
+            if isinstance(sequential, (tuple, list)):
+                sequential = each(*sequential)
+            else:
+                sequential = each(sequential)
+
+        super().__init__(inputs=inputs, outputs=sequential, *args, **kwargs)

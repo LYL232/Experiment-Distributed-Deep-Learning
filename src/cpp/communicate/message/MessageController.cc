@@ -19,4 +19,11 @@ Message *MessageController::listen(const Communicator &communicator) {
     CALLING_ABSTRACT_INTERFACE_ERROR("MessageController::listen(const Communicator &communicator)");
 }
 
+Message *MessageController::broadcastMessage(
+        const Message &message, int root, const std::shared_ptr<Communicator> &communicator) {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "broadcastMessage("
+            "const Message &message, int root, const std::shared_ptr<Communicator> &communicator)");
+}
+
 }}}

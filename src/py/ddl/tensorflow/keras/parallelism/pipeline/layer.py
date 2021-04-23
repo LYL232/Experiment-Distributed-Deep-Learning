@@ -1,7 +1,6 @@
-from ddl.tensorflow.communicator import Communicator
 from ddl.tensorflow.cpp_backend import CPPBackend
-from ddl.tensorflow.keras.parallelism.pipeline.training_stage \
-    import BaseTrainingStage
+from ddl.tensorflow.keras.parallelism.pipeline.training import TrainingExecutor
+from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe
 from tensorflow.keras.layers import Layer
 import tensorflow as tf
 import abc
@@ -11,23 +10,35 @@ import json
 class PipelineInputLayer(Layer, metaclass=abc.ABCMeta):
 
     def __init__(
-            self, name=None, dtype=None, dynamic=False,
-            index: int = 0, input_shape=None,
+            self, stage, pipe: PipelinePipe,
+            name=None, dtype=None, dynamic=False, input_shape=None,
             **kwargs
     ):
+        from ddl.tensorflow.keras.parallelism.pipeline.stage import \
+            PipelineStage
+        assert isinstance(stage, PipelineStage)
+        assert isinstance(pipe, PipelinePipe)
         if input_shape is not None:
             kwargs['input_shape'] = input_shape
         super().__init__(
             trainable=True, name=name, dtype=dtype, dynamic=dynamic,
             **kwargs
         )
-        self.__compiled = False
-        self.__previous_stage_rank = None
-        self.__communicator = None
+        self.__stage = stage
+        self.__communicator = stage.pipeline_model.pipeline_communicator
+        self.__pipe = pipe
+        self.__fake_kernel = None
 
-        self.__index = index
+    def build(self, input_shape):
+        self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
+        self.built = True
 
-        self.__shape = input_shape
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+    @tf.autograph.experimental.do_not_convert
+    def call(self, inputs, **kwargs):
+        assert self.__communicator is not None
 
         @tf.custom_gradient
         def input_grad(x, _):
@@ -40,67 +51,22 @@ class PipelineInputLayer(Layer, metaclass=abc.ABCMeta):
             """
 
             def grad(dy):
+                if self.__pipe.comes_from is None:
+                    return None, tf.zeros((1,))
                 fake_grad = CPPBackend.tf_lib().forward_and_send(
                     tf.zeros((1,)), dy,
-                    receiver=self.previous_stage_rank,
+                    receiver=self.__pipe.comes_from.stage_rank,
                     msg=json.dumps({
-                        'code': BaseTrainingStage.MessageCode.BPROP_GRAD.value,
-                        'index': self.__index
+                        'code': TrainingExecutor.MessageCode.BPROP_GRAD.value,
+                        'index': self.__pipe.index_of(self.__pipe.comes_from)
                     }),
-                    communicator_id=self.communicator.id,
-                    name=f'pipeline-input-{self.__index}'
+                    communicator_id=self.__communicator.id,
+                    name=f'gradients-of-stage-'
+                         f'{self.__pipe.comes_from.stage_rank}-pipeline-input-'
+                         f'{self.__pipe.index_of(self.__pipe.comes_from)}'
                 )
                 return None, fake_grad
 
             return tf.identity(x), grad
 
-        self.__input_grad_fn = input_grad
-        self.__fake_kernel = None
-
-    @property
-    def previous_stage_rank(self) -> int:
-        """
-        @return: 上一阶段的模型所属的rank, 如果是第一阶段的模型, 则返回-1
-        """
-        assert self.__compiled, 'access previous stage rank before' \
-                                ' compile pipeline model'
-        return self.__previous_stage_rank
-
-    @property
-    def communicator(self) -> Communicator:
-        assert self.__compiled, 'access communicator before' \
-                                ' compile pipeline model'
-        return self.__communicator
-
-    def compile_by_pipeline_model(self, pipeline_model) -> None:
-        """
-        由PipelineModel对象编译即将完成时对此对象执行的方法, 不要直接调用,
-        参数设置成PipelineModel对象也正是此意
-        @param pipeline_model: 即将编译完成的PipelineModel
-        @return: None
-        """
-        from ddl.tensorflow.keras.parallelism.pipeline.model import \
-            PipelineModel
-        assert isinstance(pipeline_model, PipelineModel)
-        self.__previous_stage_rank = \
-            pipeline_model.pipeline_communicator.rank - 1
-        self.__communicator = pipeline_model.pipeline_communicator
-        self.__compiled = True
-
-    def build(self, input_shape):
-        self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
-        if self.__shape is None:
-            self.__shape = input_shape[1:]
-        self.built = True
-
-    def compute_output_shape(self, input_shape):
-        if self.__shape is None:
-            self.__shape = input_shape[1:]
-        else:
-            assert self.__shape == input_shape[1:]
-        return input_shape
-
-    def call(self, inputs, **kwargs):
-        if self.__shape is None:
-            self.__shape = inputs.shape[1:]
-        return self.__input_grad_fn(inputs, self.__fake_kernel)
+        return input_grad(inputs, self.__fake_kernel)

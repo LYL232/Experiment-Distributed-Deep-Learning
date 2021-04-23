@@ -4,7 +4,7 @@ from tensorflow import load_op_library
 import tensorflow as tf
 
 
-class _CMessage(Structure):
+class CMessage(Structure):
     _fields_ = [
         ('msg', c_void_p),
         ('sender', c_int),
@@ -37,10 +37,15 @@ class CPPBackend:
 
         communicator_id_type = c_longlong
 
-        cls.__c_api.listen_message.restype = POINTER(_CMessage)
+        cls.__c_api.listen_message.restype = POINTER(CMessage)
         cls.__c_api.listen_message.argtypes = [communicator_id_type]
 
-        cls.__c_api.destroy_message.argtypes = [POINTER(_CMessage)]
+        cls.__c_api.broadcast_message.restype = POINTER(CMessage)
+        cls.__c_api.broadcast_message.argtypes = [
+            c_char_p, c_int, communicator_id_type, c_size_t
+        ]
+
+        cls.__c_api.destroy_message.argtypes = [POINTER(CMessage)]
 
         cls.__c_api.send_message.argtypes = [
             c_char_p, c_int, communicator_id_type, c_size_t

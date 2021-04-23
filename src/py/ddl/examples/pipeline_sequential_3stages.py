@@ -4,17 +4,18 @@ import tensorflow as tf
 
 
 def main():
-    from ddl.tensorflow.keras.parallelism.pipeline.model import PipelineModel, \
-        PipelineStage
+    from ddl.tensorflow.keras.parallelism.pipeline.model import \
+        PipelineSequentialModel
+    from ddl.tensorflow.keras.parallelism.pipeline.stage import PipelineStage
+
     from ddl.tensorflow.data_dispatcher import DataDispatcher
     from ddl.tensorflow.communicator import Communicator
-    from ddl.tensorflow.keras.models.model import Sequential
 
     tf.compat.v1.disable_eager_execution()
 
     # 原模型定义:
     # [
-    #     Reshape(input_shape=(28, 28), target_shape=(28, 28, 1)),
+    #     Reshape((28, 28, 1)),
     #     Conv2D(32, [3, 3], activation='relu'),
     #     Conv2D(64, [3, 3], activation='relu'),
     #     MaxPooling2D(pool_size=(2, 2)),
@@ -25,24 +26,52 @@ def main():
     #     Dense(10, activation='softmax')
     # ]
 
-    model = PipelineModel([
-        PipelineStage(
-            Sequential([
-                Reshape(input_shape=(28, 28), target_shape=(28, 28, 1)),
-                Conv2D(32, [3, 3], activation='relu'),
-                Conv2D(64, [3, 3], activation='relu'),
-                MaxPooling2D(pool_size=(2, 2)),
-                Dropout(0.25),
-                Flatten()
-            ])),
-        PipelineStage(
-            Sequential([
-                Dense(128, activation='relu'),
-                Dropout(0.5),
-                Dense(10, activation='softmax')
-            ])
-        )
-    ])
+    class Stage0(PipelineStage):
+        def call(self, inputs):
+            res = Reshape((28, 28, 1))(inputs)
+            res = Conv2D(32, [3, 3], activation='relu')(res)
+            return res
+
+        @property
+        def input_shape(self):
+            return 28, 28
+
+        @property
+        def output_shape(self):
+            return 26, 26, 32
+
+    class Stage1(PipelineStage):
+        def call(self, inputs):
+            res = Conv2D(64, [3, 3], activation='relu')(inputs)
+            res = MaxPooling2D(pool_size=(2, 2))(res)
+            res = Dropout(0.25)(res)
+            res = Flatten()(res)
+            return res
+
+        @property
+        def input_shape(self):
+            return 26, 26, 32
+
+        @property
+        def output_shape(self):
+            return 9216
+
+    class Stage2(PipelineStage):
+        def call(self, inputs):
+            res = Dense(128, activation='relu')(inputs)
+            res = Dropout(0.5)(res)
+            res = Dense(10, activation='softmax')(res)
+            return res
+
+        @property
+        def input_shape(self):
+            return 9216
+
+        @property
+        def output_shape(self):
+            return 10
+
+    model = PipelineSequentialModel([Stage0(), Stage1(), Stage2()])
 
     # 进行数据分发(可选)
     world = Communicator.world()

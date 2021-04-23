@@ -43,12 +43,8 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
         return results
 
     def __allreduce(self, grads):
-        from ddl.log import info
-
         if self.__gradients_allreduced:
             return grads
-
-        info('allreduce grads')
 
         def allreduce_grads():
             with tf.name_scope(self.__name + "Allreduce"):

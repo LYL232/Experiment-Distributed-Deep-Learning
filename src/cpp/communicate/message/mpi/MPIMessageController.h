@@ -15,6 +15,9 @@ class MPIMessageController : public MessageController {
 public:
     explicit MPIMessageController(std::shared_ptr<MPIBackend> backend);
 
+    Message *broadcastMessage(
+            const Message &message, int root, const std::shared_ptr<Communicator> &communicator) override;
+
     void sendMessage(const Message &message, int receiver,
                      const std::shared_ptr<Communicator> &communicator) override;
 
