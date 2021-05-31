@@ -22,6 +22,12 @@ StatusCode RingTokenCommunicateController::allreduce(const Requests &requests) {
     return getHandler(request->communicator()).allreduce(requests);
 }
 
+StatusCode RingTokenCommunicateController::allgather(const Requests &requests) {
+    assert(!requests.empty());
+    const auto &request = requests[0];
+    return getHandler(request->communicator()).allgather(requests);
+}
+
 StatusCode RingTokenCommunicateController::broadcast(const Requests &requests) {
     assert(!requests.empty());
     const auto &request = requests[0];

@@ -32,19 +32,18 @@ public:
     TensorCollectiveCommunicateRequest(
             TensorsCollectiveCommunicateController &controller,
             const std::string &key,
-            std::shared_ptr<tensorflow::Tensor> requestingTensor,
-            std::shared_ptr<tensorflow::Tensor> resultTensor,
+            std::shared_ptr<CommonTensor> requestingTensor,
+            std::shared_ptr<CommonTensor> resultTensor,
             std::function<void(StatusCode)> done,
-            std::shared_ptr<Communicator> communicator
+            std::shared_ptr<Communicator> communicator,
+            std::shared_ptr<OpContext> context
     );
 
     TensorCollectiveCommunicateRequest(const TensorCollectiveCommunicateRequest &) = default;
 
     TensorCollectiveCommunicateRequest(TensorCollectiveCommunicateRequest &&) noexcept;
 
-    std::shared_ptr<tensorflow::Tensor> &resultTensor() noexcept;
-
-    void *resultTensorData() noexcept;
+    std::shared_ptr<CommonTensor> &resultTensor() noexcept;
 
     virtual StatusCode collectiveCommunicate(const Requests &requests);
 
@@ -55,7 +54,7 @@ public:
 protected:
     TensorsCollectiveCommunicateController &controller_;
 
-    std::shared_ptr<tensorflow::Tensor> resultTensor_;
+    std::shared_ptr<CommonTensor> resultTensor_;
 
 };
 

@@ -25,6 +25,16 @@ TensorsCollectiveCommunicateController::allreduce(
 }
 
 StatusCode
+TensorsCollectiveCommunicateController::allgather(
+        const std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>> &requests
+) {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "TensorsCollectiveCommunicateController::allgather("
+            "const std::queue<std::shared_ptr<TensorCollectiveCommunicateRequest>> &requests)"
+    );
+}
+
+StatusCode
 TensorsCollectiveCommunicateController::broadcast(
         const std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>> &requests
 ) {

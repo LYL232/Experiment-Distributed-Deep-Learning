@@ -33,6 +33,29 @@ StatusCode Communicator::allreduce(
             " Operation op)");
 }
 
+StatusCode
+Communicator::allgather(
+        void *sendBuffer, size_t sendElements, void *recvBuffer, size_t recvElements,
+        DataType dtype) const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "void *sendBuffer, size_t sendElements, void *recvBuffer, size_t recvElements, "
+            "DataType dtype)");
+}
+
+StatusCode
+Communicator::allgather(
+        void *sendBuffer, size_t elements,
+        void *recvBuffer,
+        const std::vector<size_t> &recvCounts, const std::vector<size_t> &displs,
+        DataType dtype) const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "void *sendBuffer, size_t elements, "
+            "void *recvBuffer, "
+            "const std::vector<size_t> &recvCounts, "
+            "const std::vector<size_t> &displs, "
+            "DataType dtype");
+}
+
 StatusCode Communicator::broadcast(
         void *buffer, size_t elements, DataType dtype,
         int rootRank) const {
@@ -42,6 +65,7 @@ StatusCode Communicator::broadcast(
             " size_t elements, DataType dtype, "
             " int rootRank)");
 }
+
 
 Communicator::ID Communicator::id() const {
     CALLING_ABSTRACT_INTERFACE_ERROR("Communicator::id()");

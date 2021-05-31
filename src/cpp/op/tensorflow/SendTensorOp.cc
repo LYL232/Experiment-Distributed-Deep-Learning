@@ -2,11 +2,12 @@
 // Created by LYL232 on 2021/3/1.
 //
 
-#include "op/SendTensorOp.h"
+#include "op/tensorflow/SendTensorOp.h"
 #include "tensorflow/core/framework/common_shape_fns.h"
 #include "global/Global.h"
 #include "communicate/tensor/end2end/controller/TensorEnd2EndCommunicateController.h"
-
+#include "common/tensorflow/TensorflowTensor.h"
+#include "common/tensorflow/TensorflowOpContext.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -35,12 +36,13 @@ void SendTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
             make_shared<TensorSendCommunicateRequest>(
                     global.end2EndCommunicateController(),
                     name(),
-                    std::make_shared<Tensor>(input),
+                    std::make_shared<TensorflowTensor>(input),
                     [context, done](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
                         done();
                     },
-                    receiver_, global.getCommunicator(communicatorId_)
+                    receiver_, global.getCommunicator(communicatorId_),
+                    std::make_shared<TensorflowOpContext>(*context)
             )
     );
 }

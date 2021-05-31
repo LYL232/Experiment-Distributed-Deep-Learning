@@ -7,7 +7,7 @@
 
 #include "def.h"
 #include <memory>
-#include "communicate/tensor/collective/TensorCollectiveCommunicateRequest.h"
+#include "communicate/tensor/collective/request/TensorCollectiveCommunicateRequest.h"
 #include "Token.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
@@ -23,6 +23,8 @@ public:
     virtual std::shared_ptr<Token> communicationReceiveTokenFrom(int sender) const;
 
     virtual StatusCode allreduceRequests(const Requests &requests) const;
+
+    virtual StatusCode allgatherRequests(const Requests &requests) const;
 
     virtual StatusCode broadcastRequests(const Requests &requests) const;
 

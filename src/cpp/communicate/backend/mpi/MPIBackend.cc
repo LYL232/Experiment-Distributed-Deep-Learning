@@ -52,7 +52,9 @@ MPI_Datatype MPIBackend::DataType2MPIType(DataType dtype) noexcept {
         case DT_INT32:
             return MPI_INT;
         case DT_INT64:
-            return MPI_LONG_INT;
+            return MPI_INT64_T;
+        case DT_UINT64:
+            return MPI_UINT64_T;
         default:
             break;
     }

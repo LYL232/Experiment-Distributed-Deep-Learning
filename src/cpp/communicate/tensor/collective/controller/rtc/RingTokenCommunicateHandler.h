@@ -39,6 +39,8 @@ public:
 
     StatusCode allreduce(const Requests &requests);
 
+    StatusCode allgather(const Requests &requests);
+
     StatusCode broadcast(const Requests &requests);
 
 private:

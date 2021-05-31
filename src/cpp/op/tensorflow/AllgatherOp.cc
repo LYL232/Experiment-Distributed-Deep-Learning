@@ -1,63 +1,61 @@
 //
-// Created by LYL232 on 2021/2/6.
+// Created by LYL232 on 2021/5/29.
 //
 
+#include "op/tensorflow/AllgatherOp.h"
 #include "global/Global.h"
-#include "op/AllreduceOp.h"
 #include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
-#include "communicate/tensor/collective/allreduce/TensorAllreduceRequest.h"
+#include "communicate/tensor/collective/request/TensorAllgatherRequest.h"
 #include "tensorflow/core/framework/shape_inference.h"
+#include "common/tensorflow/TensorflowTensor.h"
+#include "common/tensorflow/TensorflowOpContext.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 using namespace tensorflow;
 
-REGISTER_OP("Allreduce")
+REGISTER_OP("Allgather")
         .Attr("T: {int32, int64, float32, float64}")
         .Attr("communicator_id: int")
         .Input("tensor: T")
-        .Output("allreduced: T")
+        .Output("allgathered: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
             return tensorflow::Status::OK();
         });
 
-AllreduceOp::AllreduceOp(tensorflow::OpKernelConstruction *context) :
+AllgatherOp::AllgatherOp(tensorflow::OpKernelConstruction *context) :
         AsyncOpKernel(context), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
 }
 
-void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
+void AllgatherOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace lyl232::experiment::ddl;
     using namespace std;
     // 获取输入 tensor
     const Tensor &input = context->input(0);
-    // 创建输出 tensor, context->allocate_output 用来分配输出内存
-    Tensor *output = nullptr;
-    OP_REQUIRES_OK_ASYNC(
-            context, context->allocate_output(0, input.shape(), &output), done
-    );
 
     auto &global = Global::get();
     auto &controller = global.collectiveCommunicateController();
 
     OP_REQUIRES_OK_ASYNC(context, statusCode2TFStatus(
             controller.handleRequest(
-                    make_shared<TensorAllreduceRequest>(
+                    make_shared<TensorAllgatherRequest>(
                             controller,
                             name(),
-                            std::make_shared<Tensor>(input),
-                            std::make_shared<Tensor>(*output),
+                            std::make_shared<TensorflowTensor>(input),
+                            // allgather并不能在此申请输出张量的内存, 所以放在通信时申请
+                            std::shared_ptr<TensorflowTensor>(),
                             [context, done](StatusCode code) {
                                 context->SetStatus(statusCode2TFStatus(code));
                                 done();
                             },
-                            TensorAllreduceRequest::Operation::ALLREDUCE_OP_SUM,
-                            global.getCommunicator(communicatorId_)
+                            global.getCommunicator(communicatorId_),
+                            std::make_shared<TensorflowOpContext>(*context)
                     )
             )), done
     );
 }
 
-REGISTER_KERNEL_BUILDER(Name("Allreduce").Device(DEVICE_CPU), AllreduceOp)
+REGISTER_KERNEL_BUILDER(Name("Allgather").Device(DEVICE_CPU), AllgatherOp)
 }}}

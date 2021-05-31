@@ -7,7 +7,7 @@
 
 #include <vector>
 #include "communicate/backend/CommunicationBackend.h"
-#include "communicate/tensor/collective/TensorCollectiveCommunicateRequest.h"
+#include "communicate/tensor/collective/request/TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -25,6 +25,8 @@ public:
     virtual StatusCode handleRequest(const std::shared_ptr<TensorCollectiveCommunicateRequest> &);
 
     virtual StatusCode allreduce(const Requests &requests);
+
+    virtual StatusCode allgather(const Requests &requests);
 
     virtual StatusCode broadcast(const Requests &requests);
 

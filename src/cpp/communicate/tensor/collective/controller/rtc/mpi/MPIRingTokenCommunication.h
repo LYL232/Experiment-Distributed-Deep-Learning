@@ -29,6 +29,8 @@ public:
 
     StatusCode allreduceRequests(const Requests &requests) const override;
 
+    StatusCode allgatherRequests(const Requests &requests) const override;
+
     StatusCode broadcastRequests(const Requests &requests) const override;
 
     virtual ~MPIRingTokenCommunication();
@@ -39,7 +41,8 @@ private:
     mutable char *sendBuffer_, *recvBuffer_,
             *collectiveCommunicateSendBuffer_, *collectiveCommunicateRecvBuffer_;
     mutable size_t sendBufferSize_, recvBufferSize_,
-            collectiveCommunicateBufferSize_, tokenMetaSize_;
+            collectiveSendBufferSize_, collectiveReceiveBufferSize_,
+            tokenMetaSize_;
     const MPICommunicator &mpiCommunicator_;
 
     static double inflateFactor_;
@@ -48,9 +51,9 @@ private:
 
     void checkRecvBuffer_(size_t bytesRequire) const;
 
-    void checkCollectiveCommunicateBuffer_(size_t bytesRequire) const;
+    void checkCollectiveSendBuffer_(size_t bytesRequire) const;
 
-    static void getRequestsInfo(const Requests &requests, size_t &elements, size_t &byteSize) noexcept;
+    void checkCollectiveReceiveBuffer_(size_t bytesRequire) const;
 };
 
 }}}}

@@ -32,6 +32,15 @@ RingTokenCommunication::allreduceRequests(const Requests &requests) const {
 }
 
 StatusCode
+RingTokenCommunication::allgatherRequests(const Requests &requests) const {
+    CALLING_ABSTRACT_INTERFACE_ERROR(
+            "RingTokenCommunication::allgatherRequests("
+            "const std::vector<std::shared_ptr<TensorCollectiveCommunicateRequest>>"
+            " &requests)"
+    );
+}
+
+StatusCode
 RingTokenCommunication::broadcastRequests(const Requests &requests) const {
     CALLING_ABSTRACT_INTERFACE_ERROR(
             "RingTokenCommunication::broadcastRequests("

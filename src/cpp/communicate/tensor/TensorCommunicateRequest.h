@@ -7,8 +7,9 @@
 
 #include <memory>
 #include "def.h"
+#include "common/CommonTensor.h"
+#include "common/OpContext.h"
 #include "communicate/backend/Communicator.h"
-#include "tensorflow/core/framework/tensor.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -23,9 +24,10 @@ public:
      */
     TensorCommunicateRequest(
             std::string key,
-            std::shared_ptr<tensorflow::Tensor> requestingTensor,
+            std::shared_ptr<CommonTensor> requestingTensor,
             std::function<void(StatusCode)> done,
-            std::shared_ptr<Communicator> communicator
+            std::shared_ptr<Communicator> communicator,
+            std::shared_ptr<OpContext> context
     );
 
     TensorCommunicateRequest(const TensorCommunicateRequest &) noexcept = default;
@@ -34,25 +36,20 @@ public:
 
     const std::string &key() const noexcept;
 
-    size_t tensorSize() const noexcept;
-
-    size_t elements() const noexcept;
-
-    tensorflow::DataType dtype() const noexcept;
-
-    std::shared_ptr<tensorflow::Tensor> &requestingTensor() const noexcept;
+    std::shared_ptr<CommonTensor> &requestingTensor() const noexcept;
 
     void done(StatusCode code) const noexcept;
 
-    void *requestingTensorData() const noexcept;
-
     const std::shared_ptr<Communicator> &communicator() const noexcept;
+
+    std::shared_ptr<OpContext> &context() const;
 
     virtual ~TensorCommunicateRequest() = default;
 
 private:
     std::string key_;
-    mutable std::shared_ptr<tensorflow::Tensor> requestingTensor_;
+    mutable std::shared_ptr<CommonTensor> requestingTensor_;
+    mutable std::shared_ptr<OpContext> context_;
     std::function<void(StatusCode)> done_;
     std::shared_ptr<Communicator> communicator_;
 };

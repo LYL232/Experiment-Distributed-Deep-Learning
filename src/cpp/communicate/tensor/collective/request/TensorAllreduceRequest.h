@@ -6,7 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORALLREDUCEREQUEST_H
 
 #include "communicate/backend/CommunicationBackend.h"
-#include "communicate/tensor/collective/TensorCollectiveCommunicateRequest.h"
+#include "communicate/tensor/collective/request/TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -17,10 +17,11 @@ public:
     TensorAllreduceRequest(
             TensorsCollectiveCommunicateController &controller,
             const std::string &key,
-            std::shared_ptr<tensorflow::Tensor> requestingTensor,
-            std::shared_ptr<tensorflow::Tensor> resultTensor,
+            std::shared_ptr<CommonTensor> requestingTensor,
+            std::shared_ptr<CommonTensor> resultTensor,
             std::function<void(StatusCode)> done,
-            Operation op, std::shared_ptr<Communicator> communicator
+            Operation op, std::shared_ptr<Communicator> communicator,
+            std::shared_ptr<OpContext> context
     );
 
     TensorAllreduceRequest(const TensorAllreduceRequest &other) = default;

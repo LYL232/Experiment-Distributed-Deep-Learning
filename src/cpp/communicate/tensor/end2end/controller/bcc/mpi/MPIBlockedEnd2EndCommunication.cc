@@ -21,13 +21,14 @@ MPIBlockedEnd2EndCommunication::MPIBlockedEnd2EndCommunication(
 
 StatusCode MPIBlockedEnd2EndCommunication::send(
         const TensorSendCommunicateRequest &request) const {
+    auto &tensor = *request.requestingTensor();
     pthread_mutex_lock(&sendMutex_);
-    checkSendBuffer_(request.tensorSize());
+    checkSendBuffer_(tensor.byteSize());
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("copying memory from input tensor to send buffer")
 #endif
-    memcpy(sendBuffer_, request.requestingTensorData(), request.tensorSize());
+    memcpy(sendBuffer_, tensor.data(), tensor.byteSize());
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sending tensor: " << request.key() << " to rank: " << request.receiver())
@@ -36,8 +37,8 @@ StatusCode MPIBlockedEnd2EndCommunication::send(
 
     MPI_Send(
             sendBuffer_,
-            request.elements(),
-            MPIBackend::DataType2MPIType(request.dtype()),
+            tensor.elements(),
+            MPIBackend::DataType2MPIType(tensor.dtype()),
             request.receiver(),
             MPIBackend::MPI_TAG_BCC_COMMUNICATE,
             communicator.mpiComm()
@@ -53,16 +54,17 @@ StatusCode MPIBlockedEnd2EndCommunication::send(
 
 StatusCode MPIBlockedEnd2EndCommunication::receive(
         const TensorReceiveCommunicateRequest &request) const {
+    auto &tensor = *request.requestingTensor();
     pthread_mutex_lock(&receiveMutex_);
-    checkReceiveBuffer_(request.tensorSize());
+    checkReceiveBuffer_(tensor.byteSize());
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("mpi receiving Tensor: " << request.key())
 #endif
     const auto &communicator = dynamic_cast<const MPICommunicator &>(*request.communicator());
     MPI_Recv(
             receiveBuffer_,
-            request.elements(),
-            MPIBackend::DataType2MPIType(request.dtype()),
+            tensor.elements(),
+            MPIBackend::DataType2MPIType(tensor.dtype()),
             request.sender(),
             MPIBackend::MPI_TAG_BCC_COMMUNICATE,
             communicator.mpiComm(),
@@ -73,7 +75,7 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
             "mpi received Tensor: " << request.key() <<
                                     ", copying memory from receive buffer to output tensor")
 #endif
-    memcpy(request.requestingTensorData(), receiveBuffer_, request.tensorSize());
+    memcpy(tensor.data(), receiveBuffer_, tensor.byteSize());
     pthread_mutex_unlock(&receiveMutex_);
     // todo: check status
     request.done(STATUS_OK);

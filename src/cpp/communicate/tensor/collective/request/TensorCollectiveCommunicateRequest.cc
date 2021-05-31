@@ -3,33 +3,30 @@
 //
 
 #include "global/Global.h"
-#include "communicate/tensor/collective/TensorCollectiveCommunicateRequest.h"
+#include "communicate/tensor/collective/request/TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(
         TensorsCollectiveCommunicateController &controller,
         const std::string &key,
-        std::shared_ptr<tensorflow::Tensor> requestingTensor,
-        std::shared_ptr<tensorflow::Tensor> resultTensor,
+        std::shared_ptr<CommonTensor> requestingTensor,
+        std::shared_ptr<CommonTensor> resultTensor,
         std::function<void(StatusCode)> done,
-        std::shared_ptr<Communicator> communicator)
+        std::shared_ptr<Communicator> communicator,
+        std::shared_ptr<OpContext> context)
         : TensorCommunicateRequest(
-                key, std::move(requestingTensor), std::move(done), std::move(communicator)),
-          controller_(controller), resultTensor_(std::move(resultTensor)) {
-}
+        key, std::move(requestingTensor), std::move(done),
+        std::move(communicator), std::move(context)
+), controller_(controller), resultTensor_(std::move(resultTensor)) {}
 
 TensorCollectiveCommunicateRequest::TensorCollectiveCommunicateRequest(
         TensorCollectiveCommunicateRequest &&other) noexcept
         : TensorCommunicateRequest(std::move(other)),
           controller_(other.controller_), resultTensor_(std::move(other.resultTensor_)) {}
 
-std::shared_ptr<tensorflow::Tensor> &TensorCollectiveCommunicateRequest::resultTensor() noexcept {
+std::shared_ptr<CommonTensor> &TensorCollectiveCommunicateRequest::resultTensor() noexcept {
     return resultTensor_;
-}
-
-void *TensorCollectiveCommunicateRequest::resultTensorData() noexcept {
-    return (void *) resultTensor_->tensor_data().data();
 }
 
 StatusCode TensorCollectiveCommunicateRequest::collectiveCommunicate(const Requests &requests) {

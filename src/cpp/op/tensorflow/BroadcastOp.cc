@@ -2,11 +2,13 @@
 // Created by LYL232 on 2021/2/12.
 //
 
-#include "op/BroadcastOp.h"
+#include "op/tensorflow/BroadcastOp.h"
 #include "global/Global.h"
 #include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
-#include "communicate/tensor/collective/broadcast/TensorBroadcastRequest.h"
+#include "communicate/tensor/collective/request/TensorBroadcastRequest.h"
 #include "tensorflow/core/framework/shape_inference.h"
+#include "common/tensorflow/TensorflowTensor.h"
+#include "common/tensorflow/TensorflowOpContext.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -48,13 +50,14 @@ void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
                     make_shared<TensorBroadcastRequest>(
                             controller,
                             name(),
-                            std::make_shared<Tensor>(input),
-                            std::make_shared<Tensor>(*output),
+                            std::make_shared<TensorflowTensor>(input),
+                            std::make_shared<TensorflowTensor>(*output),
                             [context, done](StatusCode code) {
                                 context->SetStatus(statusCode2TFStatus(code));
                                 done();
                             },
-                            rootRank_, global.getCommunicator(communicatorId_)
+                            rootRank_, global.getCommunicator(communicatorId_),
+                            std::make_shared<TensorflowOpContext>(*context)
                     )
             )), done);
 }

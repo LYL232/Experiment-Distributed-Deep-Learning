@@ -2,7 +2,7 @@
 // Created by LYL232 on 2021/2/12.
 //
 
-#include "communicate/tensor/collective/broadcast/TensorBroadcastRequest.h"
+#include "communicate/tensor/collective/request/TensorBroadcastRequest.h"
 #include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -12,13 +12,15 @@ const char *TensorBroadcastRequest::requestType = "Broadcast";
 TensorBroadcastRequest::TensorBroadcastRequest(
         TensorsCollectiveCommunicateController &controller,
         const std::string &key,
-        std::shared_ptr<tensorflow::Tensor> requestingTensor,
-        std::shared_ptr<tensorflow::Tensor> resultTensor,
+        std::shared_ptr<CommonTensor> requestingTensor,
+        std::shared_ptr<CommonTensor> resultTensor,
         std::function<void(StatusCode)> done,
-        int rootRank, std::shared_ptr<Communicator> communicator) :
+        int rootRank, std::shared_ptr<Communicator> communicator,
+        std::shared_ptr<OpContext> context) :
         TensorCollectiveCommunicateRequest(
                 controller, key, std::move(requestingTensor), std::move(resultTensor),
-                std::move(done), std::move(communicator)), rootRank_(rootRank) {}
+                std::move(done), std::move(communicator), std::move(context)),
+        rootRank_(rootRank) {}
 
 
 TensorBroadcastRequest::TensorBroadcastRequest(TensorBroadcastRequest &&other) noexcept:

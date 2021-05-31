@@ -1,17 +1,18 @@
 //
-// Created by LYL232 on 2021/2/6.
+// Created by LYL232 on 2021/5/29.
 //
 
-#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLREDUCEOP_H
-#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLREDUCEOP_H
+#ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLGATHEROP_H
+#define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLGATHEROP_H
 
 #include "tensorflow/core/framework/op_kernel.h"
+#include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class AllreduceOp : public tensorflow::AsyncOpKernel {
+class AllgatherOp : public tensorflow::AsyncOpKernel {
 public:
-    explicit AllreduceOp(tensorflow::OpKernelConstruction *context);
+    explicit AllgatherOp(tensorflow::OpKernelConstruction *context);
 
     void ComputeAsync(tensorflow::OpKernelContext *context, DoneCallback done) override;
 
@@ -22,4 +23,5 @@ private:
 
 }}}
 
-#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLREDUCEOP_H
+
+#endif //LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLGATHEROP_H

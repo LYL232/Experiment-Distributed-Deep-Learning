@@ -3,9 +3,11 @@
 //
 
 #include "tensorflow/core/framework/shape_inference.h"
-#include "op/ReceiveTensorOp.h"
+#include "op/tensorflow/ReceiveTensorOp.h"
 #include "global/Global.h"
 #include "communicate/tensor/end2end/controller/TensorEnd2EndCommunicateController.h"
+#include "common/tensorflow/TensorflowTensor.h"
+#include "common/tensorflow/TensorflowOpContext.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -45,12 +47,13 @@ void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) 
             make_shared<TensorReceiveCommunicateRequest>(
                     global.end2EndCommunicateController(),
                     name(),
-                    make_shared<Tensor>(input),
+                    make_shared<TensorflowTensor>(input),
                     [context, done](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
                         done();
                     },
-                    sender_, global.getCommunicator(communicatorId_)
+                    sender_, global.getCommunicator(communicatorId_),
+                    std::make_shared<TensorflowOpContext>(*context)
             )
     );
 }

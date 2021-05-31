@@ -6,6 +6,22 @@ from collections.abc import Iterable
 import tensorflow as tf
 
 
+def allreduce_gradient(
+        tensor: Tensor or tf.IndexedSlices,
+        communicator: Communicator):
+    """
+    对梯度张量进行全规约操作, 根据tensor是否是稀疏张量选择进行allreduce还是allgather操作
+    @param tensor: 梯度张量
+    @param communicator: 通信域
+    @return:
+    """
+    if isinstance(tensor, Tensor):
+        return allreduce(tensor, communicator)
+    values = allgather(tensor.values, communicator)
+    indices = allgather(tensor.indices, communicator)
+    return tf.IndexedSlices(values, indices, dense_shape=tensor.dense_shape)
+
+
 def allreduce(tensor: Tensor, communicator: Communicator):
     """
     对Tensor进行Allreduce操作
@@ -14,6 +30,17 @@ def allreduce(tensor: Tensor, communicator: Communicator):
     :@return:
     """
     return CPPBackend.tf_lib().allreduce(
+        tensor, communicator_id=communicator.id)
+
+
+def allgather(tensor: Tensor, communicator: Communicator):
+    """
+    对Tensor进行allgather操作
+    :@param tensor:
+    :@param communicator: 进行操作的通信域
+    :@return:
+    """
+    return CPPBackend.tf_lib().allgather(
         tensor, communicator_id=communicator.id)
 
 

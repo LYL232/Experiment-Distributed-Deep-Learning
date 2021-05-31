@@ -24,6 +24,17 @@ public:
             size_t elements, DataType dtype,
             AllreduceOperation op) const override;
 
+    StatusCode allgather(
+            void *sendBuffer, size_t sendElements,
+            void *recvBuffer,
+            const std::vector<size_t> &recvCounts,
+            const std::vector<size_t> &displs,
+            DataType dtype) const override;
+
+    virtual StatusCode allgather(
+            void *sendBuffer, size_t sendElements, void *recvBuffer, size_t recvElements,
+            DataType dtype) const override;
+
     StatusCode broadcast(
             void *buffer,
             size_t elements, DataType dtype,

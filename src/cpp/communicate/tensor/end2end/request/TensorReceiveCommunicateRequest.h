@@ -5,7 +5,7 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORRECEIVECOMMUNICATEREQUEST_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORRECEIVECOMMUNICATEREQUEST_H
 
-#include "communicate/tensor/end2end/TensorEnd2EndCommunicateRequest.h"
+#include "communicate/tensor/end2end/request/TensorEnd2EndCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -14,9 +14,10 @@ public:
     TensorReceiveCommunicateRequest(
             TensorEnd2EndCommunicateController &controller,
             const std::string &key,
-            std::shared_ptr<tensorflow::Tensor> requestingTensor,
+            std::shared_ptr<CommonTensor> requestingTensor,
             std::function<void(StatusCode)> done,
-            int sender, std::shared_ptr<Communicator> communicator
+            int sender, std::shared_ptr<Communicator> communicator,
+            std::shared_ptr<OpContext> context
     );
 
     TensorReceiveCommunicateRequest(const TensorReceiveCommunicateRequest &other) = default;

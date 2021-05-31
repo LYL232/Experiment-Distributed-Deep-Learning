@@ -2,11 +2,13 @@
 // Created by LYL232 on 2021/2/27.
 //
 
-#include "op/ForwardAndSendOp.h"
+#include "op/tensorflow/ForwardAndSendOp.h"
 #include "global/Global.h"
 #include "communicate/message/MessageController.h"
 #include "communicate/tensor/end2end/controller/TensorEnd2EndCommunicateController.h"
 #include "tensorflow/core/framework/shape_inference.h"
+#include "common/tensorflow/TensorflowTensor.h"
+#include "common/tensorflow/TensorflowOpContext.h"
 
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -60,12 +62,13 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
             make_shared<TensorSendCommunicateRequest>(
                     global.end2EndCommunicateController(),
                     name(),
-                    std::make_shared<Tensor>(sendingTensor),
+                    std::make_shared<TensorflowTensor>(sendingTensor),
                     [context, done](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
                         done();
                     },
-                    receiver_, commPtr
+                    receiver_, commPtr,
+                    std::make_shared<TensorflowOpContext>(*context)
             )
     );
     sendingMutex_.unlock();

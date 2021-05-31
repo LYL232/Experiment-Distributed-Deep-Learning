@@ -37,7 +37,7 @@ public:
      * @param sendBuffer 传输的数据缓冲
      * @param recvBuffer 接受的数据缓冲
      * @param elements 传输的元素个数
-     * @param dtype tensorflow::DataType
+     * @param dtype 数据类型代码
      * @param op 进行的规约运算
      * @return StatusCode
      */
@@ -46,12 +46,44 @@ public:
             size_t elements, DataType dtype,
             AllreduceOperation op) const;
 
+    /**
+     * 全收集通信, 从每个进程接收不同的元素个数版本
+     * @param sendBuffer 传输的数据缓冲
+     * @param sendElements 发送的元素个数
+     * @param recvBuffer 接受的数据缓冲
+     * @param recvCounts 从每个进程中接收的元素个数,
+     *  是一个数组, 大小为this->size(), 代表从每个进程(包括自身)接收的元素个数
+     * @param displs 将从每个进程接收到的数据放在recvBuffer的偏移位置处,
+     *  是一个数组, 大小为this->size(), 代表将从每个进程接收到的数据放在recvBuffer的偏移位置处
+     * @param dtype 数据类型代码
+     * @return StatusCode
+     */
+    virtual StatusCode allgather(
+            void *sendBuffer, size_t sendElements,
+            void *recvBuffer,
+            const std::vector<size_t> &recvCounts,
+            const std::vector<size_t> &displs,
+            DataType dtype
+    ) const;
+
+    /**
+     * 全收集通信, 从每个进程接收相同的元素个数版本
+     * @param sendBuffer 传输的数据缓冲
+     * @param sendElements 发送的元素个数
+     * @param recvBuffer 接受的数据缓冲
+     * @param recvElements 从每个进程接收的元素个数
+     * @param dtype 数据类型代码
+     * @return StatusCode
+     */
+    virtual StatusCode allgather(
+            void *sendBuffer, size_t sendElements, void *recvBuffer, size_t recvElements,
+            DataType dtype) const;
 
     /**
      * 广播通信
      * @param buffer 数据缓冲
      * @param elements 传输的元素个数
-     * @param dtype tensorflow::DataType
+     * @param dtype 数据类型代码
      * @param rootRank 根节点
      * @return StatusCode
      */

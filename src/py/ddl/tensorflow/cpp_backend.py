@@ -37,23 +37,36 @@ class CPPBackend:
 
         communicator_id_type = c_longlong
 
-        cls.__c_api.listen_message.restype = POINTER(CMessage)
+        cls.__c_api.communicator_rank.argtypes = [communicator_id_type]
+        cls.__c_api.communicator_rank.restype = c_int
+
+        cls.__c_api.communicator_size.argtypes = [communicator_id_type]
+        cls.__c_api.communicator_size.restype = c_int
+
+        cls.__c_api.world_communicator.restype = communicator_id_type
+
+        cls.__c_api.destroy_message.argtypes = [POINTER(CMessage)]
+
         cls.__c_api.listen_message.argtypes = [communicator_id_type]
+        cls.__c_api.listen_message.restype = POINTER(CMessage)
+
+        cls.__c_api.send_message.argtypes = [
+            c_char_p, c_int, communicator_id_type, c_size_t
+        ]
 
         cls.__c_api.broadcast_message.restype = POINTER(CMessage)
         cls.__c_api.broadcast_message.argtypes = [
             c_char_p, c_int, communicator_id_type, c_size_t
         ]
 
-        cls.__c_api.destroy_message.argtypes = [POINTER(CMessage)]
-
-        cls.__c_api.send_message.argtypes = [
-            c_char_p, c_int, communicator_id_type, c_size_t
+        cls.__c_api.split_communicator.argtypes = [
+            communicator_id_type, c_int, c_int
         ]
-
-        cls.__c_api.world_communicator.restype = communicator_id_type
-
         cls.__c_api.split_communicator.restype = communicator_id_type
+
+        cls.__c_api.detach_communicator.argtypes = [communicator_id_type]
+
+        cls.__c_api.communicator_rank.restype = c_int
 
         cls.__initialized = True
 

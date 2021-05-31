@@ -24,6 +24,7 @@ public:
         TOKEN_REQUEST_SHUTDOWN = 0,
         TOKEN_REQUEST_ALLREDUCE = 1,
         TOKEN_REQUEST_BROADCAST = 2,
+        TOKEN_REQUEST_ALLGATHER = 3,
         TOKEN_REQUEST_UNKNOWN
     };
 
@@ -65,7 +66,7 @@ private:
     std::string msg_;
     mutable std::string desc_;
     static const char *shutdownTypeName_;
-    static std::pair<std::string, Token::RequestType> requestNameMapInitilizer_[];
+    static std::pair<std::string, Token::RequestType> requestNameMapInitializer_[];
     static std::map<std::string, Token::RequestType> requestNameMap_;
 };
 

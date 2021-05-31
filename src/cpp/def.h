@@ -13,6 +13,7 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 typedef unsigned char uchar;
 
+// 暂时使用tensorflow的DataType
 using tensorflow::DataType;
 //enum DataType : int {
 //    DT_INVALID = 0,
@@ -81,6 +82,10 @@ inline tensorflow::Status statusCode2TFStatus(StatusCode code) {
         default:
             return tensorflow::errors::Unknown("unknown reason");
     }
+}
+
+inline size_t dataTypeSize(DataType type) {
+    return tensorflow::DataTypeSize(type);
 }
 
 // 因为tensorflow的动态加载库无法识别抽象类的符号, 导致unknown symbol的错误, 所以所有抽象类都

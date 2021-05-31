@@ -174,7 +174,7 @@ void RingTokenCommunicateHandler::handleReceivingTokenAsTokenGenerator_(std::sha
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TOKEN
             GLOBAL_INFO_WITH_THREAD_ID(
                     "forward token: " << token->desc()
-                                      << " to stage RTCC_RECV_ALLREDUCE_TOKEN")
+                                      << " to stage RTCC_RECV_COMMUNICATE_TOKEN")
 #endif
             fillTokenSendBufferAndNotify_(token);
             break;
@@ -458,6 +458,10 @@ bool RingTokenCommunicateHandler::inStage_(Stage stage) {
 
 StatusCode RingTokenCommunicateHandler::allreduce(const Requests &requests) {
     return communicationImplement_->allreduceRequests(requests);
+}
+
+StatusCode RingTokenCommunicateHandler::allgather(const Requests &requests) {
+    return communicationImplement_->allgatherRequests(requests);
 }
 
 StatusCode RingTokenCommunicateHandler::broadcast(const Requests &requests) {

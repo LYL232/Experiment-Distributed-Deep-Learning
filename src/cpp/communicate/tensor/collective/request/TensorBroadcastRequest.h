@@ -6,7 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_TENSORBROADCASTREQUEST_H
 
 #include "communicate/backend/CommunicationBackend.h"
-#include "communicate/tensor/collective/TensorCollectiveCommunicateRequest.h"
+#include "communicate/tensor/collective/request/TensorCollectiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -15,10 +15,11 @@ public:
     TensorBroadcastRequest(
             TensorsCollectiveCommunicateController &controller,
             const std::string &key,
-            std::shared_ptr<tensorflow::Tensor> requestingTensor,
-            std::shared_ptr<tensorflow::Tensor> resultTensor,
+            std::shared_ptr<CommonTensor> requestingTensor,
+            std::shared_ptr<CommonTensor> resultTensor,
             std::function<void(StatusCode)> done,
-            int rootRank, std::shared_ptr<Communicator> communicator
+            int rootRank, std::shared_ptr<Communicator> communicator,
+            std::shared_ptr<OpContext> context
     );
 
     TensorBroadcastRequest(const TensorBroadcastRequest &other) = default;

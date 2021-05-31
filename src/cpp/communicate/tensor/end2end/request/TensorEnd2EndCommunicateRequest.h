@@ -16,9 +16,10 @@ public:
     TensorEnd2EndCommunicateRequest(
             TensorEnd2EndCommunicateController &controller,
             const std::string &key,
-            std::shared_ptr<tensorflow::Tensor> requestingTensor,
+            std::shared_ptr<CommonTensor> requestingTensor,
             std::function<void(StatusCode)> done,
-            std::shared_ptr<Communicator> communicator
+            std::shared_ptr<Communicator> communicator,
+            std::shared_ptr<OpContext> context
     );
 
     TensorEnd2EndCommunicateRequest(const TensorEnd2EndCommunicateRequest &other) = default;

@@ -6,8 +6,8 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKEDEND2ENDCOMMUNICATION_H
 
 #include "def.h"
-#include "communicate/tensor/end2end/send/TensorSendCommunicateRequest.h"
-#include "communicate/tensor/end2end/receive/TensorReceiveCommunicateRequest.h"
+#include "communicate/tensor/end2end/request/TensorSendCommunicateRequest.h"
+#include "communicate/tensor/end2end/request/TensorReceiveCommunicateRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace bcc {
 

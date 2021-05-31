@@ -28,6 +28,8 @@ public:
 
     StatusCode allreduce(const Requests &requests) override;
 
+    StatusCode allgather(const Requests &requests) override;
+
     StatusCode broadcast(const Requests &requests) override;
 
     ~RingTokenCommunicateController() override;

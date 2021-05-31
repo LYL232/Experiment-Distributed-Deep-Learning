@@ -1,5 +1,5 @@
 from ddl.tensorflow import util
-from ddl.tensorflow.tensor_communicate import allreduce
+from ddl.tensorflow.tensor_communicate import allreduce_gradient
 from ddl.tensorflow.communicator import Communicator
 from tensorflow.keras.optimizers import Optimizer
 from abc import ABC
@@ -53,7 +53,7 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
                         tf.convert_to_tensor(
                             self.communicator.size > 1
                         ),
-                        lambda: allreduce(grad, self.communicator),
+                        lambda: allreduce_gradient(grad, self.communicator),
                         lambda: grad,
                         name='if-do-allreduce'
                     )

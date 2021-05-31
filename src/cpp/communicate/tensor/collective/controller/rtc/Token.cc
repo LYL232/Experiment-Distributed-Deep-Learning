@@ -4,23 +4,25 @@
 
 #include "global/LogConfig.h"
 #include "communicate/tensor/collective/controller/rtc/Token.h"
-#include "communicate/tensor/collective/allreduce/TensorAllreduceRequest.h"
-#include "communicate/tensor/collective/broadcast/TensorBroadcastRequest.h"
+#include "communicate/tensor/collective/request/TensorAllreduceRequest.h"
+#include "communicate/tensor/collective/request/TensorAllgatherRequest.h"
+#include "communicate/tensor/collective/request/TensorBroadcastRequest.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
 
 const char *Token::shutdownTypeName_ = "ShutDown";
 
-std::pair<std::string, Token::RequestType> Token::requestNameMapInitilizer_[] = {
+std::pair<std::string, Token::RequestType> Token::requestNameMapInitializer_[] = {
         std::make_pair(Token::shutdownTypeName_, Token::TOKEN_REQUEST_SHUTDOWN),
         std::make_pair(TensorBroadcastRequest::requestType, Token::TOKEN_REQUEST_BROADCAST),
-        std::make_pair(TensorAllreduceRequest::requestType, Token::TOKEN_REQUEST_ALLREDUCE)
+        std::make_pair(TensorAllreduceRequest::requestType, Token::TOKEN_REQUEST_ALLREDUCE),
+        std::make_pair(TensorAllgatherRequest::requestType, Token::TOKEN_REQUEST_ALLGATHER)
 };
 
 std::map<std::string, Token::RequestType> Token::requestNameMap_(
-        requestNameMapInitilizer_,
-        requestNameMapInitilizer_ +
-        (sizeof(requestNameMapInitilizer_) / sizeof(requestNameMapInitilizer_[0]))
+        requestNameMapInitializer_,
+        requestNameMapInitializer_ +
+        (sizeof(requestNameMapInitializer_) / sizeof(requestNameMapInitializer_[0]))
 );
 
 const std::string &Token::desc() const noexcept {
@@ -51,6 +53,9 @@ const std::string &Token::desc() const noexcept {
                 break;
             case TOKEN_REQUEST_BROADCAST:
                 desc_.append("TOKEN_REQUEST_BROADCAST");
+                break;
+            case TOKEN_REQUEST_ALLGATHER:
+                desc_.append("TOKEN_REQUEST_ALLGATHER");
                 break;
             case TOKEN_REQUEST_UNKNOWN:
                 desc_.append("TOKEN_REQUEST_UNKNOWN");
@@ -114,6 +119,8 @@ const char *Token::requestTypeName(Token::RequestType type) noexcept {
             return TensorAllreduceRequest::requestType;
         case TOKEN_REQUEST_BROADCAST:
             return TensorBroadcastRequest::requestType;
+        case TOKEN_REQUEST_ALLGATHER:
+            return TensorAllgatherRequest::requestType;
         default:
             return "ERROR: Unknown Token::RequestType";
     }
