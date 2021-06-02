@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <iostream>
+#include "global/Global.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -15,23 +16,16 @@ struct Message {
     int senderRank;
     size_t length;
 
-    Message(const char *msg, int sender, size_t len) :
-            msg_ptr(nullptr), senderRank(sender), length(len) {
-        msg_ptr = new char[length + 1];
-        memcpy(msg_ptr, msg, length);
-        msg_ptr[length] = 0;
-    }
+    Message(const char *msg, int sender, size_t len);
 
     Message(const Message &other) = delete;
 
-    Message(Message &&other) noexcept:
-            msg_ptr(other.msg_ptr), senderRank(other.senderRank), length(other.length) {
-        other.msg_ptr = nullptr;
-    }
+    Message(Message &&other) noexcept;
 
-    ~Message() {
-        delete[] msg_ptr;
-    }
+    ~Message();
+
+private:
+    static std::shared_ptr<HeapMemoryManager> memManager_;
 };
 
 }}}

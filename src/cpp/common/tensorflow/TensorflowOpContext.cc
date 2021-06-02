@@ -4,6 +4,7 @@
 
 #include "common/tensorflow/TensorflowOpContext.h"
 #include "common/tensorflow/TensorflowTensor.h"
+#include "global/Global.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -17,7 +18,7 @@ StatusCode TensorflowOpContext::allocateOutput(const CommonTensorShape &shape, s
     tensorflow::Tensor *tfTensor;
     tensorflow::Status status = context_.allocate_output(0, tfShape, &tfTensor);
     if (status.ok()) {
-        tensor.reset(new TensorflowTensor(*tfTensor));
+        tensor.reset(TRACK_TYPE_ALLOCATE(memManager_, new TensorflowTensor(*tfTensor), TensorflowTensor));
         return STATUS_OK;
     }
     // todo: status code specify

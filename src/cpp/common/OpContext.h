@@ -7,6 +7,7 @@
 
 #include "def.h"
 #include "common/CommonTensor.h"
+#include "global/HeapMemoryManager.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -15,6 +16,8 @@ public:
     virtual StatusCode allocateOutput(const CommonTensorShape &shape, std::shared_ptr<CommonTensor> &tensor);
 
     virtual ~OpContext() = default;
+protected:
+    static std::shared_ptr<HeapMemoryManager> memManager_;
 };
 
 }}}

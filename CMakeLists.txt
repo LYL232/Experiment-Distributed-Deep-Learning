@@ -9,6 +9,7 @@ list(APPEND SOURCES
         "src/cpp/global/Global.cc"
         "src/cpp/global/GlobalLog.cc"
         "src/cpp/global/initialize.cc"
+        "src/cpp/global/HeapMemoryManager.cc"
         "src/cpp/c_api.cc"
         "src/cpp/op/tensorflow/AllreduceOp.cc"
         "src/cpp/op/tensorflow/AllgatherOp.cc"
@@ -43,6 +44,7 @@ list(APPEND SOURCES
         "src/cpp/communicate/tensor/end2end/controller/bcc/BlockedEnd2EndCommunicateController.cc"
         "src/cpp/communicate/tensor/end2end/controller/bcc/BlockedEnd2EndCommunication.cc"
         "src/cpp/communicate/tensor/end2end/controller/bcc/mpi/MPIBlockedEnd2EndCommunication.cc"
+        "src/cpp/communicate/message/Message.cc"
         "src/cpp/communicate/message/MessageController.cc"
         "src/cpp/communicate/message/mpi/MPIMessageController.cc"
         )

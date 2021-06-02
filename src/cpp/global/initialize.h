@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include "global/GlobalLog.h"
+#include "global/HeapMemoryManager.h"
 #include "communicate/tensor/collective/controller/TensorsCollectiveCommunicateController.h"
 #include "communicate/tensor/end2end/controller/TensorEnd2EndCommunicateController.h"
 #include "communicate/message/MessageController.h"
@@ -14,6 +15,8 @@
 namespace lyl232 { namespace experiment { namespace ddl {
 
 std::shared_ptr<GlobalLog> globalLogGetter() noexcept;
+
+std::shared_ptr<HeapMemoryManager> heapMemoryManagerGetter() noexcept;
 
 std::shared_ptr<CommunicationBackend> communicationBackendGetter() noexcept;
 

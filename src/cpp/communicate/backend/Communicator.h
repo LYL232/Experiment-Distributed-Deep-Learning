@@ -8,6 +8,7 @@
 #include <memory>
 #include <map>
 #include "def.h"
+#include "global/HeapMemoryManager.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
@@ -112,7 +113,7 @@ public:
 
 protected:
     int rank_, size_;
-
+    static std::shared_ptr<HeapMemoryManager> memManager_;
     static std::map<Communicator::ID, std::shared_ptr<Communicator>> &communicatorMap_() noexcept;
 };
 

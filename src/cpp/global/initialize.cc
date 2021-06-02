@@ -18,6 +18,7 @@ std::shared_ptr<TensorsCollectiveCommunicateController> collectiveCommunicateCon
 std::shared_ptr<TensorEnd2EndCommunicateController> end2EndCommunicateController_;
 std::shared_ptr<GlobalLog> logStream_;
 std::shared_ptr<MPIMessageController> mpiMessageController_;
+std::shared_ptr<HeapMemoryManager> heapMemoryManager_;
 }
 
 
@@ -29,14 +30,24 @@ std::shared_ptr<GlobalLog> globalLogGetter() noexcept {
         string logFile("log-");
         int rank = communicationBackendGetter()->worldCommunicator()->rank();
         logFile.append(std::to_string(rank)).append(".txt");
-        auto *log = new ofstream(logFile);
+        auto *log = new ofstream(logFile);  // no mem track
         function<void()> logStreamDestructor = [log]() {
             log->close();
-            delete log;
+            delete log;  // no mem track
         };
-        logStream_.reset(new GlobalLog(*log, logStreamDestructor));
+        logStream_.reset(new GlobalLog(*log, logStreamDestructor));   // no mem track
     }
     return logStream_;
+}
+
+std::shared_ptr<HeapMemoryManager> heapMemoryManagerGetter() noexcept {
+    using namespace initialize_implement;
+    using namespace std;
+    lock_guard <recursive_mutex> guard(mutex_);
+    if (!heapMemoryManager_.get()) {
+        heapMemoryManager_.reset(new HeapMemoryManager());  // no mem track
+    }
+    return heapMemoryManager_;
 }
 
 std::shared_ptr<CommunicationBackend> communicationBackendGetter() noexcept {
@@ -44,7 +55,7 @@ std::shared_ptr<CommunicationBackend> communicationBackendGetter() noexcept {
     using namespace std;
     lock_guard<recursive_mutex> guard(mutex_);
     if (!mpiBackend_.get()) {
-        mpiBackend_.reset(new MPIBackend());
+        mpiBackend_.reset(new MPIBackend());  // no mem track
     }
     return mpiBackend_;
 }
@@ -57,7 +68,7 @@ collectiveCommunicateControllerGetter() noexcept {
     if (!collectiveCommunicateController_.get()) {
         auto backend = communicationBackendGetter();
         GLOBAL_INFO_WITH_THREAD_ID("new MPIRingTokenCommunicateController")
-        collectiveCommunicateController_.reset(new rtc::MPIRingTokenCommunicateController());
+        collectiveCommunicateController_.reset(new rtc::MPIRingTokenCommunicateController());  // no mem track
         GLOBAL_INFO_WITH_THREAD_ID("new MPIRingTokenCommunicateController initialized")
     }
     return collectiveCommunicateController_;
@@ -74,7 +85,7 @@ end2EndCommunicateControllerGetter() noexcept {
         GLOBAL_INFO_WITH_THREAD_ID("new BlockedEnd2EndCommunicateController")
 
         end2EndCommunicateController_.reset(
-                new bcc::BlockedEnd2EndCommunicateController(
+                new bcc::BlockedEnd2EndCommunicateController(  // no mem track
                         backend,
                         make_shared<bcc::MPIBlockedEnd2EndCommunication>(mpiBackend_)
                 ));
@@ -90,7 +101,7 @@ std::shared_ptr<MessageController> messageControllerGetter() noexcept {
     if (!mpiMessageController_.get()) {
         auto backend = communicationBackendGetter();
         GLOBAL_INFO_WITH_THREAD_ID("new MPIMessageController")
-        mpiMessageController_.reset(new MPIMessageController(mpiBackend_));
+        mpiMessageController_.reset(new MPIMessageController(mpiBackend_));  // no mem track
         GLOBAL_INFO_WITH_THREAD_ID("new MPIMessageController initialized")
     }
     return mpiMessageController_;

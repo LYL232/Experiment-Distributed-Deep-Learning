@@ -54,6 +54,7 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
 
     sendingMutex_.lock();
 
+    GLOBAL_INFO("forward and send")
     global.messageController().sendMessage(
             Message(msg_.c_str(), commPtr->rank(), msg_.length()),
             receiver_, commPtr);

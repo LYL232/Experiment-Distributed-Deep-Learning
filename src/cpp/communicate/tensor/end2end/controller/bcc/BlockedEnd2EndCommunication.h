@@ -18,6 +18,8 @@ public:
     virtual StatusCode receive(const TensorReceiveCommunicateRequest &request) const;
 
     virtual ~BlockedEnd2EndCommunication() = default;
+protected:
+    static std::shared_ptr<HeapMemoryManager> memManager_;
 };
 
 }}}}

@@ -3,8 +3,11 @@
 //
 
 #include "communicate/tensor/collective/controller/rtc/RingTokenCommunication.h"
+#include "global/initialize.h"
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace rtc {
+
+std::shared_ptr<HeapMemoryManager> RingTokenCommunication::memManager_(heapMemoryManagerGetter());
 
 RingTokenCommunication::RingTokenCommunication(std::shared_ptr<Communicator> communicator) :
         communicator_(std::move(communicator)) {}

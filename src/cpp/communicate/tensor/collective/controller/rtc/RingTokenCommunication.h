@@ -30,6 +30,7 @@ public:
 
 protected:
     std::shared_ptr<Communicator> communicator_;
+    static std::shared_ptr<HeapMemoryManager> memManager_;
 };
 
 

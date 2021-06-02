@@ -80,11 +80,11 @@ void MPIBackend::initialize_(int *argc, char ***argv) {
                 "environment dose not provide MPI_THREAD_MULTIPLE requirement"
         );
     }
-    auto *copiedWorld = new MPI_Comm(MPI_COMM_WORLD);
+    auto *copiedWorld = new MPI_Comm(MPI_COMM_WORLD);  // no mem track
     int rank, size;
     MPI_Comm_rank(*copiedWorld, &rank);
     MPI_Comm_size(*copiedWorld, &size);
-    world_.reset(new MPICommunicator(
+    world_.reset(new MPICommunicator(  // no mem track
             std::shared_ptr<MPI_Comm>(copiedWorld),
             rank, size
     ));

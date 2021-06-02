@@ -4,8 +4,11 @@
 
 #include "def.h"
 #include "communicate/message/MessageController.h"
+#include "global/initialize.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
+
+std::shared_ptr<HeapMemoryManager> MessageController::memManager_(heapMemoryManagerGetter());
 
 void MessageController::sendMessage(
         const Message &message, int receiver,

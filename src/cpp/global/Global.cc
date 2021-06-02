@@ -10,6 +10,7 @@ namespace lyl232 { namespace experiment { namespace ddl {
 const std::shared_ptr<GlobalLog> Global::log(globalLogGetter());
 
 Global Global::instance_(
+        heapMemoryManagerGetter(),
         communicationBackendGetter(),
         collectiveCommunicateControllerGetter(),
         end2EndCommunicateControllerGetter(),
@@ -17,15 +18,17 @@ Global Global::instance_(
 );
 
 Global::Global(
+        std::shared_ptr<HeapMemoryManager> heapMemoryManager,
         std::shared_ptr<CommunicationBackend> communicationBackend,
         std::shared_ptr<TensorsCollectiveCommunicateController> collectiveController,
         std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController,
         std::shared_ptr<MessageController> messageController
-) noexcept: communicationBackend_(std::move(communicationBackend)),
+) noexcept: heapMemoryManager_(std::move(heapMemoryManager)),
+            communicationBackend_(std::move(communicationBackend)),
             collectiveCommunicateController_(std::move(collectiveController)),
             end2EndCommunicateController_(std::move(end2EndController)),
             messageController_(std::move(messageController)),
-            communicatorMap_(new std::map<Communicator::ID, std::shared_ptr<Communicator>>()) {
+            communicatorMap_(new std::map<Communicator::ID, std::shared_ptr<Communicator>>()) {   // no mem track
     const auto &world = communicationBackend_->worldCommunicator();
     communicatorMap_->emplace(world->id(), world);
 }
@@ -41,6 +44,10 @@ TensorEnd2EndCommunicateController &Global::end2EndCommunicateController() const
 
 MessageController &Global::messageController() const noexcept {
     return *messageController_;
+}
+
+HeapMemoryManager &Global::heapMemoryManager() const noexcept {
+    return *heapMemoryManager_;
 }
 
 CommunicationBackend &Global::communicationBackend() const noexcept {
@@ -65,7 +72,7 @@ void Global::detachCommunicator(Communicator::ID id) const noexcept {
 }
 
 Global::~Global() {
-    delete communicatorMap_;
+    delete communicatorMap_;  // no mem track
 }
 
 }}}

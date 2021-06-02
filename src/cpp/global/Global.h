@@ -7,9 +7,8 @@
 
 #include <pthread.h>
 #include <thread>
-#include <communicate/backend/mpi/MPIBackend.h>
-
 #include "global/GlobalLog.h"
+#include "global/HeapMemoryManager.h"
 #include "communicate/backend/Communicator.h"
 
 
@@ -47,6 +46,8 @@ public:
 
     MessageController &messageController() const noexcept;
 
+    HeapMemoryManager &heapMemoryManager() const noexcept;
+
     const std::shared_ptr<Communicator> &getCommunicator(Communicator::ID) const noexcept;
 
     /**
@@ -64,12 +65,14 @@ public:
 
 private:
     Global(
+            std::shared_ptr<HeapMemoryManager> heapMemoryManager,
             std::shared_ptr<CommunicationBackend> communicationBackend,
             std::shared_ptr<TensorsCollectiveCommunicateController> collectiveController,
             std::shared_ptr<TensorEnd2EndCommunicateController> end2EndController,
             std::shared_ptr<MessageController> messageController
     ) noexcept;
 
+    mutable std::shared_ptr<HeapMemoryManager> heapMemoryManager_;
     mutable std::shared_ptr<CommunicationBackend> communicationBackend_;
     mutable std::shared_ptr<TensorsCollectiveCommunicateController>
             collectiveCommunicateController_;
@@ -79,8 +82,8 @@ private:
 
     // 这个map设计成指针是因为这个map的析构可能在communicationBackend_之后, 这样如果
     // Communicator被析构可能会出异常, 设计成指针就可以控制其何时被析构
+    // todo: 可以尝试一下写在Backend对象中的析构函数中
     mutable std::map<Communicator::ID, std::shared_ptr<Communicator>> *communicatorMap_;
-
     static Global instance_;
 };
 

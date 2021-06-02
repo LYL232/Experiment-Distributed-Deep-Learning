@@ -5,7 +5,7 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_C_API_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_C_API_H
 
-#include "communicate/message/message.h"
+#include "communicate/message/Message.h"
 #include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {

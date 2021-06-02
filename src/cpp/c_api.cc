@@ -2,7 +2,7 @@
 // Created by LYL232 on 2021/2/7.
 //
 #include "global/Global.h"
-#include "communicate/message/MessageController.h"
+#include "global/initialize.h"
 #include "c_api.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -21,7 +21,7 @@ Communicator::ID world_communicator() {
 }
 
 void destroy_message(Message *messagePtr) {
-    delete messagePtr;
+    TRACK_TYPE_DEALLOCATE(heapMemoryManagerGetter(), messagePtr, Message);
 }
 
 Message *listen_message(Communicator::ID id) {

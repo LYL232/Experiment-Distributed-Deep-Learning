@@ -4,9 +4,12 @@
 
 #include "communicate/backend/Communicator.h"
 #include "global/Global.h"
+#include "global/initialize.h"
 #include "def.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
+
+std::shared_ptr<HeapMemoryManager> Communicator::memManager_(heapMemoryManagerGetter());
 
 Communicator::Communicator(int rank, int size) : rank_(rank), size_(size) {}
 

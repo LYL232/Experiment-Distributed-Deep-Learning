@@ -90,7 +90,7 @@ StatusCode MPICommunicator::broadcast(
 }
 
 std::shared_ptr<Communicator> MPICommunicator::split(int color, int key) const {
-    auto *newComm = new MPI_Comm;
+    auto *newComm = TRACK_TYPE_ALLOCATE(memManager_, new MPI_Comm, MPI_Comm);
     MPI_Comm_split(*mpiComm_, color, key, newComm);
     int rank, size;
     MPI_Comm_rank(*newComm, &rank);

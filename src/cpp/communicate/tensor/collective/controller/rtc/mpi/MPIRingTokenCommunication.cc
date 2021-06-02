@@ -425,41 +425,41 @@ MPIRingTokenCommunication::broadcastRequests(const Requests &requests) const {
 
 void MPIRingTokenCommunication::checkSendBuffer_(size_t bytesRequire) const {
     if (sendBufferSize_ < bytesRequire) {
-        delete[]sendBuffer_;
+        memManager_->deallocateBytes(sendBuffer_);
         sendBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        sendBuffer_ = new char[sendBufferSize_];
+        sendBuffer_ = (char *) memManager_->allocateBytes(sendBufferSize_);
     }
 }
 
 void MPIRingTokenCommunication::checkRecvBuffer_(size_t bytesRequire) const {
     if (recvBufferSize_ < bytesRequire) {
-        delete[]recvBuffer_;
+        memManager_->deallocateBytes(recvBuffer_);
         recvBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        recvBuffer_ = new char[recvBufferSize_];
+        recvBuffer_ = (char *) memManager_->allocateBytes(recvBufferSize_);
     }
 }
 
 void MPIRingTokenCommunication::checkCollectiveSendBuffer_(size_t bytesRequire) const {
     if (collectiveSendBufferSize_ < bytesRequire) {
-        delete[]collectiveCommunicateSendBuffer_;
+        memManager_->deallocateBytes(collectiveCommunicateSendBuffer_);
         collectiveSendBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        collectiveCommunicateSendBuffer_ = new char[collectiveSendBufferSize_];
+        collectiveCommunicateSendBuffer_ = (char *) memManager_->allocateBytes(collectiveSendBufferSize_);
     }
 }
 
 void MPIRingTokenCommunication::checkCollectiveReceiveBuffer_(size_t bytesRequire) const {
     if (collectiveReceiveBufferSize_ < bytesRequire) {
-        delete[]collectiveCommunicateRecvBuffer_;
+        memManager_->deallocateBytes(collectiveCommunicateRecvBuffer_);
         collectiveReceiveBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        collectiveCommunicateRecvBuffer_ = new char[collectiveReceiveBufferSize_];
+        collectiveCommunicateRecvBuffer_ = (char *) memManager_->allocateBytes(collectiveReceiveBufferSize_);
     }
 }
 
 MPIRingTokenCommunication::~MPIRingTokenCommunication() {
-    delete[]sendBuffer_;
-    delete[]recvBuffer_;
-    delete[]collectiveCommunicateSendBuffer_;
-    delete[]collectiveCommunicateRecvBuffer_;
+    memManager_->deallocateBytes(sendBuffer_);
+    memManager_->deallocateBytes(recvBuffer_);
+    memManager_->deallocateBytes(collectiveCommunicateSendBuffer_);
+    memManager_->deallocateBytes(collectiveCommunicateRecvBuffer_);
 }
 
 

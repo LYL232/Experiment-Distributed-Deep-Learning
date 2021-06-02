@@ -84,24 +84,24 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
 
 void MPIBlockedEnd2EndCommunication::checkSendBuffer_(size_t bytesRequire) const {
     if (sendBufferSize_ < bytesRequire) {
-        delete[]sendBuffer_;
+        memManager_->deallocateBytes(sendBuffer_);
         sendBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        sendBuffer_ = new char[sendBufferSize_];
+        sendBuffer_ = (char *) memManager_->allocateBytes(sendBufferSize_);
     }
 }
 
 void MPIBlockedEnd2EndCommunication::checkReceiveBuffer_(size_t bytesRequire) const {
     if (receiveBufferSize_ < bytesRequire) {
-        delete[]receiveBuffer_;
+        memManager_->deallocateBytes(receiveBuffer_);
         receiveBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        receiveBuffer_ = new char[receiveBufferSize_];
+        receiveBuffer_ = (char *) memManager_->allocateBytes(receiveBufferSize_);
     }
 }
 
 
 MPIBlockedEnd2EndCommunication::~MPIBlockedEnd2EndCommunication() {
-    delete[]sendBuffer_;
-    delete[]receiveBuffer_;
+    memManager_->deallocateBytes(sendBuffer_);
+    memManager_->deallocateBytes(receiveBuffer_);
 }
 
 }}}}

@@ -6,7 +6,7 @@
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_MESSAGECONTROLLER_H
 
 #include <memory>
-#include "communicate/message/message.h"
+#include "communicate/message/Message.h"
 #include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
@@ -19,6 +19,9 @@ public:
     virtual void sendMessage(const Message &message, int receiver, const std::shared_ptr<Communicator> &communicator);
 
     virtual Message *listen(const Communicator &communicator);
+
+protected:
+    static std::shared_ptr<HeapMemoryManager> memManager_;
 };
 
 }}}

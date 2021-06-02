@@ -21,7 +21,7 @@ std::ostringstream &GlobalLog::thisThreadLogStream() const noexcept {
     if (iter == threadLogStream_.end()) {
         pthread_rwlock_unlock(&rwlock_);
         pthread_rwlock_wrlock(&rwlock_);
-        ptr = new std::ostringstream();
+        ptr = new std::ostringstream();  // no mem track
         threadLogStream_.emplace(std::this_thread::get_id(), ptr);
     } else {
         ptr = iter->second;
@@ -36,7 +36,7 @@ GlobalLog::~GlobalLog() {
     streamDestructor_();
     pthread_rwlock_destroy(&rwlock_);
     for (auto iter = threadLogStream_.begin(); iter != threadLogStream_.end(); ++iter) {
-        delete iter->second;
+        delete iter->second;  // no mem track
     }
 }
 

@@ -37,7 +37,7 @@ Message *MPIMessageController::broadcastMessage(
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_COMMUNICATE_MESSAGE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi brocasted Message")
 #endif
-    auto *res = new Message(buffer_, root, len);
+    auto *res = TRACK_TYPE_ALLOCATE(memManager_, new Message(buffer_, root, len), Message);
     pthread_mutex_unlock(&mutex_);
     return res;
 }
@@ -100,20 +100,22 @@ Message *MPIMessageController::listen(const Communicator &communicator) {
     buffer_[len] = 0;
     GLOBAL_INFO_WITH_THREAD_ID("received message msg: " << (const char *) buffer_ << ", sender: " << sender)
 #endif
-    auto *res = new Message(buffer_, sender, len);
+    auto *res = TRACK_TYPE_ALLOCATE(memManager_, new Message(buffer_, sender, len), Message);
     pthread_mutex_unlock(&mutex_);
     return res;
 }
 
 void MPIMessageController::checkBuffer_(size_t byteSize) {
     if (bufferSize_ < byteSize) {
-        delete[]buffer_;
-        buffer_ = new char[bufferSize_ = (size_t) ((double) byteSize * inflateFactor_)];
+        memManager_->deallocateBytes(buffer_);
+        buffer_ = (char *) memManager_->allocateBytes(
+                bufferSize_ = (size_t) ((double) byteSize * inflateFactor_)
+        );
     }
 }
 
 MPIMessageController::~MPIMessageController() {
-    delete[]buffer_;
+    memManager_->deallocateBytes(buffer_);
     pthread_mutex_destroy(&mutex_);
 }
 

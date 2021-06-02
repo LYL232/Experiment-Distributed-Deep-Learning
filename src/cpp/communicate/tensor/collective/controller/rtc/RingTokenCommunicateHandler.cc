@@ -24,11 +24,11 @@ RingTokenCommunicateHandler::RingTokenCommunicateHandler(
         waitingReadyTokenId_(),
         registeredRequest_(), communicationImplement_(std::move(communicationImplement)),
         communicator_(std::move(communicator)) {
-    sendThread_ = new std::thread(&RingTokenCommunicateHandler::sendMain_, this);
+    sendThread_ = new std::thread(&RingTokenCommunicateHandler::sendMain_, this);  // no mem track
     while (!initialized()) {
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
-    recvThread_ = new std::thread(&RingTokenCommunicateHandler::recvMain_, this);
+    recvThread_ = new std::thread(&RingTokenCommunicateHandler::recvMain_, this);  // no mem track
 }
 
 RingTokenCommunicateHandler::~RingTokenCommunicateHandler() {
@@ -39,8 +39,8 @@ RingTokenCommunicateHandler::~RingTokenCommunicateHandler() {
     ));
     sendThread_->join();
     recvThread_->join();
-    delete sendThread_;
-    delete recvThread_;
+    delete sendThread_;  // no mem track
+    delete recvThread_;  // no mem track
     pthread_mutex_destroy(&outMutex_);
     pthread_rwlock_destroy(&stageLock_);
     pthread_rwlock_destroy(&registerLock_);
