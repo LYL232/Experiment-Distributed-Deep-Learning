@@ -355,8 +355,8 @@ class TrainingExecutor:
         tot_batches = self.__samples // self.__batch_size
         tot_micro_batches = tot_batches * micro_batches_per_batch
         if tot_batches * self.__batch_size < self.__samples:
+            remain = self.__samples - tot_batches * self.__batch_size
             tot_batches += 1
-            remain = self.__samples * tot_batches * self.__batch_size
             remain_micro_batches = remain // self.__micro_batch_size
             if remain_micro_batches * self.__micro_batch_size < remain:
                 remain_micro_batches += 1
