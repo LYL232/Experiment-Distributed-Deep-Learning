@@ -28,18 +28,11 @@ public:
     ~MPIBlockedEnd2EndCommunication() override;
 
 private:
-    mutable char *receiveBuffer_;
-    mutable size_t receiveBufferSize_;
-
     mutable std::shared_ptr<MPIBackend> backend_;
 
     mutable MPI_Status statusBuffer_;
 
     mutable pthread_mutex_t sendMutex_, receiveMutex_;
-
-    static double inflateFactor_;
-
-    void checkReceiveBuffer_(size_t bytesRequire) const;
 };
 
 }}}}

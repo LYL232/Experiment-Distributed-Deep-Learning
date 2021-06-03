@@ -9,11 +9,8 @@
 
 namespace lyl232 { namespace experiment { namespace ddl { namespace bcc {
 
-double MPIBlockedEnd2EndCommunication::inflateFactor_ = 1.5;
-
 MPIBlockedEnd2EndCommunication::MPIBlockedEnd2EndCommunication(
         std::shared_ptr<MPIBackend> backend) :
-        receiveBuffer_(nullptr), receiveBufferSize_(0),
         backend_(std::move(backend)), statusBuffer_(),
         sendMutex_(PTHREAD_MUTEX_INITIALIZER),
         receiveMutex_(PTHREAD_MUTEX_INITIALIZER) {}
@@ -47,13 +44,12 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
         const TensorReceiveCommunicateRequest &request) const {
     auto &tensor = *request.requestingTensor();
     pthread_mutex_lock(&receiveMutex_);
-    checkReceiveBuffer_(tensor.byteSize());
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("mpi receiving Tensor: " << request.key())
 #endif
     const auto &communicator = dynamic_cast<const MPICommunicator &>(*request.communicator());
     MPI_Recv(
-            receiveBuffer_,
+            tensor.data(),
             tensor.elements(),
             MPIBackend::DataType2MPIType(tensor.dtype()),
             request.sender(),
@@ -62,28 +58,15 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
             &statusBuffer_
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
-    GLOBAL_INFO_WITH_THREAD_ID(
-            "mpi received Tensor: " << request.key() <<
-                                    ", copying memory from receive buffer to output tensor")
+    GLOBAL_INFO_WITH_THREAD_ID("mpi received Tensor: " << request.key() << "\n")
 #endif
-    memcpy(tensor.data(), receiveBuffer_, tensor.byteSize());
     pthread_mutex_unlock(&receiveMutex_);
     // todo: check status
     request.done(STATUS_OK);
     return STATUS_OK;
 }
 
-void MPIBlockedEnd2EndCommunication::checkReceiveBuffer_(size_t bytesRequire) const {
-    if (receiveBufferSize_ < bytesRequire) {
-        memManager_->deallocateBytes(receiveBuffer_);
-        receiveBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        receiveBuffer_ = (char *) memManager_->allocateBytes(receiveBufferSize_);
-    }
-}
 
-
-MPIBlockedEnd2EndCommunication::~MPIBlockedEnd2EndCommunication() {
-    memManager_->deallocateBytes(receiveBuffer_);
-}
+MPIBlockedEnd2EndCommunication::~MPIBlockedEnd2EndCommunication() {}
 
 }}}}
