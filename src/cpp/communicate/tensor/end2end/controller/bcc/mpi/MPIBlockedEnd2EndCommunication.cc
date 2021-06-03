@@ -13,8 +13,7 @@ double MPIBlockedEnd2EndCommunication::inflateFactor_ = 1.5;
 
 MPIBlockedEnd2EndCommunication::MPIBlockedEnd2EndCommunication(
         std::shared_ptr<MPIBackend> backend) :
-        sendBuffer_(nullptr), receiveBuffer_(nullptr),
-        sendBufferSize_(0), receiveBufferSize_(0),
+        receiveBuffer_(nullptr), receiveBufferSize_(0),
         backend_(std::move(backend)), statusBuffer_(),
         sendMutex_(PTHREAD_MUTEX_INITIALIZER),
         receiveMutex_(PTHREAD_MUTEX_INITIALIZER) {}
@@ -23,20 +22,12 @@ StatusCode MPIBlockedEnd2EndCommunication::send(
         const TensorSendCommunicateRequest &request) const {
     auto &tensor = *request.requestingTensor();
     pthread_mutex_lock(&sendMutex_);
-    checkSendBuffer_(tensor.byteSize());
-
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
-    GLOBAL_INFO_WITH_THREAD_ID("copying memory from input tensor to send buffer")
-#endif
-    memcpy(sendBuffer_, tensor.data(), tensor.byteSize());
-
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sending tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
     const auto &communicator = dynamic_cast<const MPICommunicator &>(*request.communicator());
-
     MPI_Send(
-            sendBuffer_,
+            request.requestingTensor()->data(),
             tensor.elements(),
             MPIBackend::DataType2MPIType(tensor.dtype()),
             request.receiver(),
@@ -82,14 +73,6 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
     return STATUS_OK;
 }
 
-void MPIBlockedEnd2EndCommunication::checkSendBuffer_(size_t bytesRequire) const {
-    if (sendBufferSize_ < bytesRequire) {
-        memManager_->deallocateBytes(sendBuffer_);
-        sendBufferSize_ = (size_t) ((double) bytesRequire * inflateFactor_);
-        sendBuffer_ = (char *) memManager_->allocateBytes(sendBufferSize_);
-    }
-}
-
 void MPIBlockedEnd2EndCommunication::checkReceiveBuffer_(size_t bytesRequire) const {
     if (receiveBufferSize_ < bytesRequire) {
         memManager_->deallocateBytes(receiveBuffer_);
@@ -100,7 +83,6 @@ void MPIBlockedEnd2EndCommunication::checkReceiveBuffer_(size_t bytesRequire) co
 
 
 MPIBlockedEnd2EndCommunication::~MPIBlockedEnd2EndCommunication() {
-    memManager_->deallocateBytes(sendBuffer_);
     memManager_->deallocateBytes(receiveBuffer_);
 }
 
