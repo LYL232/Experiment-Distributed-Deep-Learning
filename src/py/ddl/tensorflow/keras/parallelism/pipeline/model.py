@@ -336,7 +336,7 @@ class PipelineModel(Model):
             steps_per_epoch=None,
             validation_steps=None, validation_batch_size=None,
             validation_freq=1,
-            max_queue_size=10, workers=1,
+            max_queue_size=10, workers=None,
             use_multiprocessing=False,
             micro_batch_size: int = None,
             clear_session: bool = True
@@ -369,6 +369,9 @@ class PipelineModel(Model):
         """
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
+
+        assert workers is None, 'current version not support specify workers'
+
         assert self._is_compiled, f'{Communicator.world().rank} not compiled'
         if not self.__work:
             return
@@ -421,7 +424,8 @@ class PipelineModel(Model):
             # 'validation_batch_size': validation_batch_size, 这个参数在静态图执行模式中无法识别
             'validation_freq': validation_freq,
             'max_queue_size': max_queue_size,
-            'workers': workers,
+            # 不允许使用worker参数, tensorflow 多线程调用session会出问题
+            # 'workers': workers,
             'use_multiprocessing': use_multiprocessing,
             'verbose': verbose
         }

@@ -9,7 +9,6 @@ from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
 
 import json
 from enum import Enum
-from threading import Condition
 import tensorflow as tf
 from tensorflow.keras.callbacks import History, Callback
 import numpy as np
@@ -23,22 +22,6 @@ class TrainingExecutor:
         BPROP_GRAD = 2
         DONE = 3
 
-    class Status(Enum):
-        """
-        由于fit和data_generator不是同一个线程的动作, 所以需要一些线程间同步操作,
-        本类是线程间同步操作的状态类
-        """
-        # 初始化
-        INIT = 0
-        # 准备就绪
-        READY = 1
-        # 前向传播之后
-        AFTER_FPROP = 2
-        # 批次结束
-        BATCH_END = 3
-        # 训练结束
-        DONE = 4
-
     class TrainingCallback(Callback):
         """
         后向传播结束回调函数
@@ -51,9 +34,6 @@ class TrainingExecutor:
         def on_train_batch_end(self, batch, logs=None):
             # 通知模型已经张量已经传输完毕, 或许可以通过op和C api进行通知, 但是有点复杂
             self.__executor.on_micro_batch_end(batch)
-
-        def on_epoch_begin(self, epoch, logs=None):
-            self.__executor.on_epoch_begin(epoch)
 
     def __init__(
             self, stage, micro_batch_controller: MicroBatchController,
@@ -210,9 +190,6 @@ class TrainingExecutor:
         self.__micro_batch_size = micro_batch_size if micro_batch_size else \
             batch_size
 
-        self.__status_cond = Condition()
-        self.__status = self.Status.INIT
-
         self.__micro_batch_inputs = []
 
         self.__stage_communicator = stage.pipeline_model.stage_communicator
@@ -270,14 +247,10 @@ class TrainingExecutor:
             epochs=self.__epochs,
             verbose=verbose,
             callbacks=self.__callbacks,
+            # 不允许使用多线程调用self.__fit_data_generator()
+            workers=0,
             **self.__fit_args
         )
-
-        self.__status_cond.acquire()
-        # 当fit结束后, 会调用一次前向传播, 但不会计算梯度
-        # (个人猜测应该是最后一次更新模型梯度后再进行一次前向传播来计算loss)
-        while self.__status != self.Status.AFTER_FPROP:
-            self.__status_cond.wait()
 
         info('done, sending Done to previous stage')
         for i in range(self.__pipeline_input_count):
@@ -292,20 +265,8 @@ class TrainingExecutor:
                 communicator=self.__pipeline_communicator
             )
 
-        self.__status = self.Status.DONE
-
-        self.__status_cond.notify_all()
-        self.__status_cond.release()
         info('returning')
         return history
-
-    def on_epoch_begin(self, _epoch: int):
-        # 暂时先不用epoch这个参数, 目前主要用来通知data_generator线程已经准备就绪
-        self.__status_cond.acquire()
-        if self.__status == self.Status.INIT:
-            self.__status = self.Status.READY
-        self.__status_cond.notify_all()
-        self.__status_cond.release()
 
     def on_micro_batch_end(self, batch: int):
         """
@@ -319,13 +280,7 @@ class TrainingExecutor:
                 self.__micro_batches_per_batch - 1 \
                 or batch == self.__total_micro_batches - 1:
             info(f'batch end, micro batch: {batch}')
-            self.__status_cond.acquire()
-            while self.__status != self.Status.AFTER_FPROP:
-                self.__status_cond.wait()
-            self.__status = self.Status.BATCH_END
             self.__micro_batch_inputs.clear()
-            self.__status_cond.notify_all()
-            self.__status_cond.release()
 
     def __get_total_micro_batches(self) -> (int, int):
         """
@@ -555,14 +510,6 @@ class TrainingExecutor:
                 batch_end
             )
 
-            self.__status_cond.acquire()
-            while self.__status != self.Status.READY and \
-                    self.__status != self.Status.BATCH_END:
-                info(f'waiting to forward propagation batch['
-                     f'{batch_begin}:{batch_end}],'
-                     f' current status:{self.__status}')
-                self.__status_cond.wait()
-
             micro_batch_segments = []
 
             while micro_batch_begin < batch_end:
@@ -578,12 +525,10 @@ class TrainingExecutor:
                 #  覆写fit的逻辑, 或者直接把微批次的操作写入op里
 
                 # 好像是多线程的Session的问题, 如果不这样跑, 会发生Tensor不在图里的异常
-                with self.session.as_default():
-                    with self.session.graph.as_default():
-                        micro_batch_outputs = \
-                            self.stage.model.predict(micro_batch_inputs)
-                        if not isinstance(micro_batch_outputs, (tuple, list)):
-                            micro_batch_outputs = (micro_batch_outputs,)
+                micro_batch_outputs = \
+                    self.stage.model.predict(micro_batch_inputs)
+                if not isinstance(micro_batch_outputs, (tuple, list)):
+                    micro_batch_outputs = (micro_batch_outputs,)
 
                 self.__send_micro_batch_outputs(
                     micro_batch_begin, micro_batch_end,
@@ -594,10 +539,6 @@ class TrainingExecutor:
                     micro_batch_begin + self.__micro_batch_size,
                     batch_end
                 )
-
-            self.__status = self.Status.AFTER_FPROP
-            self.__status_cond.notify_all()
-            self.__status_cond.release()
 
             self.__micro_batch_controller.initialize_micro_batch_vars(
                 self.__micro_batch_inputs

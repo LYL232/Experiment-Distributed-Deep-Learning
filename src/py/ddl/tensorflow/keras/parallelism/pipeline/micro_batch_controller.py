@@ -110,21 +110,6 @@ class MicroBatchController:
 
             optimizer._aggregate_gradients = micro_batch_aggregate_gradients
 
-        # todo: 这里应用梯度后会出现类似以下警告: 应该是多线程执行session run之后出现的问题
-        #  需要想办法解决
-        # 2021-04-23 09:23:37.994231: W tensorflow/c/c_api.cc:326] Operation
-        # '{name:'training/cond_14' id:764 op device:{}
-        # def:{{{node training/cond_14}} = If[Tcond=DT_BOOL,
-        # Tin=[DT_RESOURCE, DT_RESOURCE], Tout=[DT_INT32],
-        # _lower_using_switch_merge=true, _read_only_resou
-        # rce_inputs=[1, 2], else_branch=training_cond_14_false_1125[],
-        # output_shapes=[[]],
-        # then_branch=training_cond_14_true_1124[]](training/Less_14,
-        # pipeline-0-vars/first_micro_batch_size, pipeline
-        # -0-vars/last_micro_batch_size)}}' was changed by setting attribute
-        # after it was run by a session. This mutation will have no effect,
-        # and will trigger an error in the future. Either don't mod
-        # ify nodes after running them or create a new session.
         def micro_batch_apply_gradients(
                 grads_and_vars,
                 name=None,
