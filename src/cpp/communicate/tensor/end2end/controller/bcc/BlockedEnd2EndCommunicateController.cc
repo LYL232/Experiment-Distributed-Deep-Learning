@@ -26,7 +26,8 @@ BlockedEnd2EndCommunicateController::handleRequest(const std::shared_ptr<TensorE
         requestTypeName = "unknown: ";
     }
     GLOBAL_INFO_WITH_THREAD_ID(
-            "op request to " << requestTypeName << "tensor: " << request->key())
+            "op request to " << requestTypeName << "tensor: " << request->key() <<
+                             ", tag:" << request->tag())
 #endif
     return request->end2EndCommunicate();
 }

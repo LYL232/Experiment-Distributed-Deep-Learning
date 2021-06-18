@@ -18,9 +18,10 @@ public:
     enum MPICommunicateTag : int {
         MPI_TAG_RTA_META,
         MPI_TAG_RTA_MSG,
-        MPI_TAG_BCC_COMMUNICATE,
         MPI_TAG_MESSAGE_META,
-        MPI_TAG_MESSAGE_MSG
+        MPI_TAG_MESSAGE_MSG,
+        // 以下的枚举一定要最后一个, 为了自定义tag区分于内置tag
+        MPI_CUSTOM_TAG_BEGIN,
     };
 
     explicit MPIBackend(int *argc = nullptr, char ***argv = nullptr);

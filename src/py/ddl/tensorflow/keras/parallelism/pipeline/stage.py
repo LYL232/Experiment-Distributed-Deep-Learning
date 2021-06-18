@@ -1,6 +1,7 @@
 from ddl.tensorflow.keras.parallelism.pipeline.model import PipelineModel
 from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe
-from ddl.tensorflow.keras.parallelism.pipeline.layer import PipelineInputLayer
+from ddl.tensorflow.keras.parallelism.pipeline.layer import \
+    PipelineInputLayer, PipelineOutputLayer
 from ddl.tensorflow import util
 
 from tensorflow.keras.models import Model
@@ -18,6 +19,7 @@ class PipelineStage(metaclass=ABCMeta):
         self.__stage_rank = -1
 
         self.__input_tensors = None
+        self.__output_tensors = None
         self.__pipeline_input_tensors = None
         self.__built = False
         self.__called = False
@@ -82,8 +84,6 @@ class PipelineStage(metaclass=ABCMeta):
         self.__stage_rank = stage_rank
 
     def build(self) -> None:
-        self.__input_tensors = []
-
         input_shape = util.formalize_shapes(self.input_shape)
         self.__pipeline_input_tensors = []
         self.__input_tensors = []
@@ -92,10 +92,27 @@ class PipelineStage(metaclass=ABCMeta):
             this_inputs = Input(shape=shape)
             self.__input_tensors.append(this_inputs)
             self.__pipeline_input_tensors.append(
-                PipelineInputLayer(self, self.input_pipes[i])(this_inputs))
+                PipelineInputLayer(
+                    self, self.input_pipes[i],
+                    name=f'pipeline-input-{i}'
+                )(this_inputs)
+            )
         outputs = self.call(*self.__pipeline_input_tensors)
 
-        self.__model = Model(inputs=self.__input_tensors, outputs=outputs)
+        if not isinstance(outputs, (tuple, list)):
+            outputs = (outputs,)
+        output_shape = util.formalize_shapes(self.output_shape)
+        self.__output_tensors = []
+        for i in range(len(output_shape)):
+            self.__output_tensors.append(
+                PipelineOutputLayer(
+                    self, self.__output_pipes[i],
+                    name=f'pipeline-output-{i}'
+                )(outputs[i])
+            )
+        self.__model = Model(
+            inputs=self.__input_tensors, outputs=self.__output_tensors
+        )
         self.__built = True
 
     def __call__(self, *args, **kwargs) -> tuple or PipelinePipe:

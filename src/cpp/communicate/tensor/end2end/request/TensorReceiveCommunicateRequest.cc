@@ -14,10 +14,12 @@ TensorReceiveCommunicateRequest::TensorReceiveCommunicateRequest(
         std::shared_ptr<CommonTensor> requestingTensor,
         std::function<void(StatusCode)> done, int sender,
         std::shared_ptr<Communicator> communicator,
-        std::shared_ptr<OpContext> context) :
+        std::shared_ptr<OpContext> context,
+        int tag) :
         TensorEnd2EndCommunicateRequest(
                 controller, key, std::move(requestingTensor),
-                std::move(done), std::move(communicator), std::move(context)), sender_(sender) {}
+                std::move(done), std::move(communicator), std::move(context), tag),
+        sender_(sender) {}
 
 TensorReceiveCommunicateRequest::TensorReceiveCommunicateRequest(
         TensorReceiveCommunicateRequest &&other) noexcept:

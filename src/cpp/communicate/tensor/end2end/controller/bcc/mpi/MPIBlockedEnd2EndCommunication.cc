@@ -11,14 +11,11 @@ namespace lyl232 { namespace experiment { namespace ddl { namespace bcc {
 
 MPIBlockedEnd2EndCommunication::MPIBlockedEnd2EndCommunication(
         std::shared_ptr<MPIBackend> backend) :
-        backend_(std::move(backend)), statusBuffer_(),
-        sendMutex_(PTHREAD_MUTEX_INITIALIZER),
-        receiveMutex_(PTHREAD_MUTEX_INITIALIZER) {}
+        backend_(std::move(backend)), statusBuffer_() {}
 
 StatusCode MPIBlockedEnd2EndCommunication::send(
         const TensorSendCommunicateRequest &request) const {
     auto &tensor = *request.requestingTensor();
-    pthread_mutex_lock(&sendMutex_);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sending tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
@@ -28,22 +25,23 @@ StatusCode MPIBlockedEnd2EndCommunication::send(
             tensor.elements(),
             MPIBackend::DataType2MPIType(tensor.dtype()),
             request.receiver(),
-            MPIBackend::MPI_TAG_BCC_COMMUNICATE,
+            request.tag() + MPIBackend::MPI_CUSTOM_TAG_BEGIN,
             communicator.mpiComm()
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_MPI_CALLS
     GLOBAL_INFO_WITH_THREAD_ID("mpi sent tensor: " << request.key() << " to rank: " << request.receiver())
 #endif
-    pthread_mutex_unlock(&sendMutex_);
     // todo: check status
     request.done(STATUS_OK);
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TF_OP_INTERACTION
+    GLOBAL_INFO_WITH_THREAD_ID("tensor:" << request.key() << " done send")
+#endif
     return STATUS_OK;
 }
 
 StatusCode MPIBlockedEnd2EndCommunication::receive(
         const TensorReceiveCommunicateRequest &request) const {
     auto &tensor = *request.requestingTensor();
-    pthread_mutex_lock(&receiveMutex_);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("mpi receiving Tensor: " << request.key())
 #endif
@@ -53,16 +51,18 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
             tensor.elements(),
             MPIBackend::DataType2MPIType(tensor.dtype()),
             request.sender(),
-            MPIBackend::MPI_TAG_BCC_COMMUNICATE,
+            request.tag() + MPIBackend::MPI_CUSTOM_TAG_BEGIN,
             communicator.mpiComm(),
             &statusBuffer_
     );
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_DETAIL
     GLOBAL_INFO_WITH_THREAD_ID("mpi received Tensor: " << request.key() << "\n")
 #endif
-    pthread_mutex_unlock(&receiveMutex_);
     // todo: check status
     request.done(STATUS_OK);
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TF_OP_INTERACTION
+    GLOBAL_INFO_WITH_THREAD_ID("tensor:" << request.key() << " done receive")
+#endif
     return STATUS_OK;
 }
 

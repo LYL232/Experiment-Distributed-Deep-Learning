@@ -17,7 +17,7 @@ public:
     void ComputeAsync(tensorflow::OpKernelContext *context, DoneCallback done) override;
 
 private:
-    int receiver_;
+    int receiver_, tag_;
     // 为了方便传通信域对象信息, 所以在op的参数里定义communicator为整数, 其即是一个Communicator对象的指针
     Communicator::ID communicatorId_;
 };

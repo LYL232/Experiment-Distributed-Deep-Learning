@@ -18,6 +18,7 @@ REGISTER_OP("ReceiveTensor")
         .Input("input: T")
         .Attr("sender: int")
         .Attr("communicator_id: int")
+        .Attr("tag: int")
         .Output("received: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
@@ -25,8 +26,9 @@ REGISTER_OP("ReceiveTensor")
         });
 
 ReceiveTensorOp::ReceiveTensorOp(tensorflow::OpKernelConstruction *context) :
-        AsyncOpKernel(context), sender_(-1), communicatorId_(0) {
+        AsyncOpKernel(context), sender_(-1), tag_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("sender", &sender_));
+    OP_REQUIRES_OK(context, context->GetAttr("tag", &tag_));
     OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
 }
 
@@ -53,7 +55,8 @@ void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) 
                         done();
                     },
                     sender_, global.getCommunicator(communicatorId_),
-                    std::make_shared<TensorflowOpContext>(*context)
+                    std::make_shared<TensorflowOpContext>(*context),
+                    tag_
             )
     );
 }

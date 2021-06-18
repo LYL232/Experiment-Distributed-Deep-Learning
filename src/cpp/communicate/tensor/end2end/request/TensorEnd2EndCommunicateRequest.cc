@@ -14,17 +14,24 @@ TensorEnd2EndCommunicateRequest::TensorEnd2EndCommunicateRequest(
         std::shared_ptr<CommonTensor> requestingTensor,
         std::function<void(StatusCode)> done,
         std::shared_ptr<Communicator> communicator,
-        std::shared_ptr<OpContext> context) :
-        TensorCommunicateRequest(key, std::move(requestingTensor), std::move(done),
-                                 std::move(communicator), std::move(context)),
-        controller_(controller) {}
+        std::shared_ptr<OpContext> context,
+        int tag) :
+        TensorCommunicateRequest(
+                key, std::move(requestingTensor), std::move(done),
+                std::move(communicator), std::move(context)),
+        controller_(controller), tag_(std::max(0, tag)) {}
 
 TensorEnd2EndCommunicateRequest::TensorEnd2EndCommunicateRequest(
         TensorEnd2EndCommunicateRequest &&other) noexcept:
-        TensorCommunicateRequest(std::move(other)), controller_(other.controller_) {}
+        TensorCommunicateRequest(std::move(other)),
+        controller_(other.controller_), tag_(other.tag_) {}
 
 StatusCode TensorEnd2EndCommunicateRequest::end2EndCommunicate() {
     CALLING_ABSTRACT_INTERFACE_ERROR("TensorEnd2EndCommunicateRequest::end2EndCommunicate()");
+}
+
+int TensorEnd2EndCommunicateRequest::tag() const noexcept {
+    return tag_;
 }
 
 }}}

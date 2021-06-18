@@ -19,17 +19,22 @@ public:
             std::shared_ptr<CommonTensor> requestingTensor,
             std::function<void(StatusCode)> done,
             std::shared_ptr<Communicator> communicator,
-            std::shared_ptr<OpContext> context
+            std::shared_ptr<OpContext> context,
+            int tag
     );
 
     TensorEnd2EndCommunicateRequest(const TensorEnd2EndCommunicateRequest &other) = default;
 
-    TensorEnd2EndCommunicateRequest(TensorEnd2EndCommunicateRequest &&other) noexcept ;
+    TensorEnd2EndCommunicateRequest(TensorEnd2EndCommunicateRequest &&other) noexcept;
 
     virtual StatusCode end2EndCommunicate();
 
+    int tag() const noexcept;
+
 protected:
     TensorEnd2EndCommunicateController &controller_;
+private:
+    int tag_;
 };
 
 }}}

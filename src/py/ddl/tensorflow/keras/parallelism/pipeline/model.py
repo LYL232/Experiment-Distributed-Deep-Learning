@@ -55,22 +55,22 @@ class PipelineModel(Model):
             assert len(outputs) > 0
             assert all([isinstance(each, PipelinePipe) for each in outputs])
 
-        self.__inputs_index = {}
-        self.__outputs_index = {}
+        self.__original_inputs_index = {}
+        self.__original_outputs_index = {}
         for i in range(len(inputs)):
-            self.__inputs_index[id(inputs[i])] = i
+            self.__original_inputs_index[id(inputs[i])] = i
         for i in range(len(outputs)):
-            self.__outputs_index[id(outputs[i])] = i
+            self.__original_outputs_index[id(outputs[i])] = i
 
         # inputs和outputs不能有重复元素
-        assert len(self.__inputs_index) == len(inputs), \
+        assert len(self.__original_inputs_index) == len(inputs), \
             'duplicate inputs'
-        assert len(self.__outputs_index) == len(outputs), \
+        assert len(self.__original_outputs_index) == len(outputs), \
             'duplicate outputs'
 
         # inputs和outputs交集必须为空
-        assert len(set(self.__inputs_index.keys()).intersection(
-            set(self.__outputs_index))) == 0, \
+        assert len(set(self.__original_inputs_index.keys()).intersection(
+            set(self.__original_outputs_index))) == 0, \
             'inputs and outputs must not have the same tensor'
 
         # 检查所有inputs没有来源
@@ -107,7 +107,7 @@ class PipelineModel(Model):
             self.__total_stages[id(stage)] = stage
             for pipe in stage.output_pipes:
                 if len(pipe.send_to) == 0:
-                    assert id(pipe) in self.__outputs_index.keys(), \
+                    assert id(pipe) in self.__original_outputs_index.keys(), \
                         'there exists tensor that does not connect to next' \
                         ' tensor but not in outputs'
                 else:
@@ -299,8 +299,8 @@ class PipelineModel(Model):
             metrics_list = []
             for i in range(len(stage.output_pipes)):
                 output = stage.output_pipes[i]
-                if id(output) in self.__outputs_index.keys():
-                    index = self.__outputs_index[id(output)]
+                if id(output) in self.__original_outputs_index.keys():
+                    index = self.__original_outputs_index[id(output)]
                     output_loss.append(loss[index])
                     metrics_list.append(metrics[index])
                 else:
@@ -383,9 +383,9 @@ class PipelineModel(Model):
 
         if isinstance(x, DataDispatcher):
             for each in stage.input_pipes:
-                if id(each) in self.__inputs_index.keys():
+                if id(each) in self.__original_inputs_index.keys():
                     pipeline_inputs_data_indexes.append(
-                        self.__inputs_index[id(each)]
+                        self.__original_inputs_index[id(each)]
                     )
                 else:
                     pipeline_inputs_data_indexes.append(None)
@@ -398,9 +398,9 @@ class PipelineModel(Model):
 
         if isinstance(y, DataDispatcher):
             for each in stage.output_pipes:
-                if id(each) in self.__outputs_index.keys():
+                if id(each) in self.__original_outputs_index.keys():
                     pipeline_targets_data_indexes.append(
-                        self.__outputs_index[id(each)]
+                        self.__original_outputs_index[id(each)]
                     )
                 else:
                     pipeline_targets_data_indexes.append(None)

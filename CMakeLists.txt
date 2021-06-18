@@ -17,6 +17,7 @@ list(APPEND SOURCES
         "src/cpp/op/tensorflow/ForwardAndSendOp.cc"
         "src/cpp/op/tensorflow/ReceiveTensorOp.cc"
         "src/cpp/op/tensorflow/SendTensorOp.cc"
+        "src/cpp/op/tensorflow/DoButPassByOp.cc"
         "src/cpp/common/OpContext.cc"
         "src/cpp/common/CommonTensor.cc"
         "src/cpp/common/tensorflow/TensorflowOpContext.cc"

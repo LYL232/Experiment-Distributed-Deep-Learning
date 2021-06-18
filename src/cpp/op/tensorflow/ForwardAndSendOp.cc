@@ -15,15 +15,13 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 using namespace tensorflow;
 
-std::mutex ForwardAndSendOp::sendingMutex_;
-
 REGISTER_OP("ForwardAndSend")
         .Attr("T: {int32, int64, float32, float64}")
         .Input("forward: T")
         .Input("send: T")
         .Attr("receiver: int")
-        .Attr("msg: string")
         .Attr("communicator_id: int")
+        .Attr("tag: int")
         .Output("forwarded: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
@@ -31,10 +29,10 @@ REGISTER_OP("ForwardAndSend")
         });
 
 ForwardAndSendOp::ForwardAndSendOp(tensorflow::OpKernelConstruction *context) :
-        AsyncOpKernel(context), receiver_(-1), communicatoId_(0) {
+        AsyncOpKernel(context), receiver_(-1), tag_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("receiver", &receiver_));
-    OP_REQUIRES_OK(context, context->GetAttr("msg", &msg_));
-    OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatoId_));
+    OP_REQUIRES_OK(context, context->GetAttr("tag", &tag_));
+    OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
 }
 
 void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
@@ -50,13 +48,7 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
     }
 
     auto &global = Global::get();
-    const auto &commPtr = global.getCommunicator(communicatoId_);
-
-    sendingMutex_.lock();
-
-    global.messageController().sendMessage(
-            Message(msg_.c_str(), commPtr->rank(), msg_.length()),
-            receiver_, commPtr);
+    const auto &commPtr = global.getCommunicator(communicatorId_);
 
     global.end2EndCommunicateController().handleRequest(
             make_shared<TensorSendCommunicateRequest>(
@@ -68,10 +60,11 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
                         done();
                     },
                     receiver_, commPtr,
-                    std::make_shared<TensorflowOpContext>(*context)
+                    std::make_shared<TensorflowOpContext>(*context),
+                    tag_
             )
     );
-    sendingMutex_.unlock();
+
 }
 
 REGISTER_KERNEL_BUILDER(Name("ForwardAndSend").Device(DEVICE_CPU), ForwardAndSendOp)

@@ -1,9 +1,13 @@
+from typing import Tuple
+
+
 class PipelinePipe:
     """
     PipelineStage与PipelineStage之间进行通信的对象
     """
 
-    def __init__(self, shape: tuple, comes_from=None, output_index: int = -1):
+    def __init__(
+            self, shape: Tuple[int], comes_from=None, output_index: int = -1):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
         if comes_from is not None:
@@ -16,7 +20,7 @@ class PipelinePipe:
         self.__shape = shape
 
     @property
-    def shape(self) -> tuple:
+    def shape(self) -> Tuple[int]:
         return self.__shape
 
     @property
@@ -27,10 +31,10 @@ class PipelinePipe:
     def send_to(self) -> tuple:
         return tuple(self.__send_to)
 
-    def index_of(self, stage):
+    def index_of(self, stage) -> int:
         return self.__index_of[id(stage)]
 
-    def send_to_stage(self, stage, input_index: int):
+    def send_to_stage(self, stage, input_index: int) -> None:
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
         assert isinstance(stage, PipelineStage)
