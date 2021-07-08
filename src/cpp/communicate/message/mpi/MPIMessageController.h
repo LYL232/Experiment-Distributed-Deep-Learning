@@ -13,7 +13,7 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class MPIMessageController : public MessageController {
 public:
-    explicit MPIMessageController(std::shared_ptr<MPIBackend> backend);
+    explicit MPIMessageController();
 
     Message *broadcastMessage(
             const Message &message, int root, const std::shared_ptr<Communicator> &communicator) override;
@@ -28,17 +28,7 @@ public:
 private:
     pthread_mutex_t mutex_;
 
-    std::shared_ptr<MPIBackend> backend_;
-
-    char *buffer_;
-
-    size_t bufferSize_;
-
     MPI_Status statusBuffer_;
-
-    void checkBuffer_(size_t byteSize);
-
-    static double inflateFactor_;
 };
 
 }}}

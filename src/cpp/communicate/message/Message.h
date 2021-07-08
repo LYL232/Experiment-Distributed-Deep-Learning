@@ -16,7 +16,21 @@ struct Message {
     int senderRank;
     size_t length;
 
+    /**
+     * 这个构造函数会将msg的内容复制出来，不会影响msg
+     * @param msg
+     * @param sender
+     * @param len
+     */
     Message(const char *msg, int sender, size_t len);
+
+    /**
+     * 这个构造函数会在析构时释放msg指针
+     * @param sender
+     * @param len
+     * @param msg
+     */
+    Message(int sender, size_t len, char *msg);
 
     Message(const Message &other) = delete;
 

@@ -16,6 +16,9 @@ Message::Message(const char *msg, int sender, size_t len) :
     msg_ptr[length] = 0;
 }
 
+Message::Message(int sender, size_t len, char *msg) :
+        msg_ptr(msg), senderRank(sender), length(len) {}
+
 Message::Message(Message &&other) noexcept:
         msg_ptr(other.msg_ptr), senderRank(other.senderRank), length(other.length) {
     other.msg_ptr = nullptr;

@@ -9,6 +9,9 @@
 #include "mpi.h"
 #include "communicate/backend/CommunicationBackend.h"
 
+#define MAX_MPI_BUFFER_SIZE (((size_t)(1) << 31) - 1)
+// ((size_t)(1) << 31) - 1
+
 namespace lyl232 { namespace experiment { namespace ddl {
 
 class MPIBackend : public CommunicationBackend {
@@ -49,6 +52,7 @@ public:
 private:
     static std::mutex mutex_;
     static int refs_;
+
     static bool initialized_, finalized_;
 
     static std::shared_ptr<Communicator> worldGetter_(int *argc = nullptr, char ***argv = nullptr);

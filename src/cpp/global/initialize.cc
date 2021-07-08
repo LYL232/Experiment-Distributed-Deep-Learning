@@ -36,6 +36,10 @@ std::shared_ptr<GlobalLog> globalLogGetter() noexcept {
             delete log;  // no mem track
         };
         logStream_.reset(new GlobalLog(*log, logStreamDestructor));   // no mem track
+        logStream_->thisThreadLogStream() << "MPI_BUFFER_SIZE: " << MAX_MPI_BUFFER_SIZE << " = "
+                                          << (double) MAX_MPI_BUFFER_SIZE / 1024.0 << "K = "
+                                          << (double) MAX_MPI_BUFFER_SIZE / 1024.0 / 1024.0 << "M"
+                                          << endl;
     }
     return logStream_;
 }
@@ -43,7 +47,7 @@ std::shared_ptr<GlobalLog> globalLogGetter() noexcept {
 std::shared_ptr<HeapMemoryManager> heapMemoryManagerGetter() noexcept {
     using namespace initialize_implement;
     using namespace std;
-    lock_guard <recursive_mutex> guard(mutex_);
+    lock_guard<recursive_mutex> guard(mutex_);
     if (!heapMemoryManager_.get()) {
         heapMemoryManager_.reset(new HeapMemoryManager());  // no mem track
     }
@@ -101,7 +105,7 @@ std::shared_ptr<MessageController> messageControllerGetter() noexcept {
     if (!mpiMessageController_.get()) {
         auto backend = communicationBackendGetter();
         GLOBAL_INFO_WITH_THREAD_ID("new MPIMessageController")
-        mpiMessageController_.reset(new MPIMessageController(mpiBackend_));  // no mem track
+        mpiMessageController_.reset(new MPIMessageController());  // no mem track
         GLOBAL_INFO_WITH_THREAD_ID("new MPIMessageController initialized")
     }
     return mpiMessageController_;

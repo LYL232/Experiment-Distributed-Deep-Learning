@@ -16,6 +16,7 @@ from tensorflow.keras.optimizers import Optimizer
 from tensorflow.keras.callbacks import History
 from tensorflow.python.keras import backend
 import tensorflow as tf
+import time
 
 
 def intermediate_loss(grad, output):
@@ -372,6 +373,11 @@ class PipelineModel(Model):
 
         assert workers is None, 'current version not support specify workers'
 
+        if micro_batch_size is not None:
+            batch_size = int(batch_size)
+            micro_batch_size = int(micro_batch_size)
+            micro_batch_size = min(micro_batch_size, batch_size)
+
         assert self._is_compiled, f'{Communicator.world().rank} not compiled'
         if not self.__work:
             return
@@ -381,6 +387,7 @@ class PipelineModel(Model):
         pipeline_inputs_data_indexes = []
         pipeline_targets_data_indexes = []
 
+        data_dispatch_time = None
         if isinstance(x, DataDispatcher):
             for each in stage.input_pipes:
                 if id(each) in self.__original_inputs_index.keys():
@@ -389,12 +396,14 @@ class PipelineModel(Model):
                     )
                 else:
                     pipeline_inputs_data_indexes.append(None)
+            begin = time.time()
             x = self.__dispatch_data(
                 x, tuple(filter(
                     lambda a: a is not None,
                     pipeline_inputs_data_indexes
                 ))
             )
+            data_dispatch_time = time.time() - begin
 
         if isinstance(y, DataDispatcher):
             for each in stage.output_pipes:
@@ -404,12 +413,16 @@ class PipelineModel(Model):
                     )
                 else:
                     pipeline_targets_data_indexes.append(None)
+            begin = time.time()
             y = self.__dispatch_data(
                 y, tuple(filter(
                     lambda a: a is not None,
                     pipeline_targets_data_indexes
                 ))
             )
+            data_dispatch_time = time.time() - begin \
+                if data_dispatch_time is None else \
+                data_dispatch_time + time.time() - begin
 
         fit_args = {
             'callbacks': callbacks,
@@ -439,6 +452,8 @@ class PipelineModel(Model):
             epochs=epochs,
             **fit_args
         ).run()
+        if data_dispatch_time is not None:
+            res.history['data_dispatch_time'] = data_dispatch_time
         if clear_session:
             tf.keras.backend.clear_session()
         return res

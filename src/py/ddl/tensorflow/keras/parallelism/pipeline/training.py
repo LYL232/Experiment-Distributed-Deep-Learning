@@ -154,7 +154,7 @@ class TrainingExecutor:
             **self.__fit_args
         )
 
-        info('done, sending Done to previous stage')
+        info('done')
         for i in range(self.__pipeline_input_count):
             pipe: PipelinePipe = self.stage.input_pipes[i]
             if pipe.comes_from is None:

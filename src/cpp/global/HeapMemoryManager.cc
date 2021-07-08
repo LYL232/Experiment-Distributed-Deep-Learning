@@ -52,6 +52,12 @@ HeapMemoryManager::~HeapMemoryManager() {
 void *HeapMemoryManager::allocateBytes(size_t bytes) const {
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_HEAP_MEMORY_TRACK
     auto *ptr = new char[bytes];
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_HEAP_MEMORY_TRACK_LOG_DETAIL
+    GLOBAL_INFO_WITH_THREAD_ID(
+            "allocate bytes for " << bytes <<
+            " = " << (double) bytes / 1024.0 << "K = "
+            << (double)bytes / 1024.0 / 1024.0 << "M")
+#endif
     // todo: ptr申请失败会为nullptr, 需要作出相应检查
     pthread_mutex_lock(&mutex_);
     numBytesAllocate_ += 1;
@@ -74,7 +80,16 @@ void HeapMemoryManager::deallocateBytes(void *ptr) const {
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_HEAP_MEMORY_TRACK
     pthread_mutex_lock(&mutex_);
     numBytesDeallocate_ += 1;
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_HEAP_MEMORY_TRACK_LOG_DETAIL
+    auto bytes = ptrMemSize_[(size_t) ptr];
+    GLOBAL_INFO_WITH_THREAD_ID(
+            "allocate bytes for " << bytes <<
+                                  " = " << (double) bytes / 1024.0 << "K = "
+                                  << (double)bytes / 1024.0 / 1024.0 << "M")
+    usingMemSize_ -= bytes;
+#else
     usingMemSize_ -= ptrMemSize_[(size_t) ptr];
+#endif
     ptrMemSize_.erase((size_t) ptr);
     pthread_mutex_unlock(&mutex_);
 #endif

@@ -15,6 +15,8 @@ std::mutex MPIBackend::mutex_;
 bool MPIBackend::initialized_ = false;
 bool MPIBackend::finalized_ = false;
 int MPIBackend::refs_ = 0;
+// todo: 这里不能设成常量
+//const size_t MPIBackend::maxMessageTransferSize = ((size_t)(1) << 31) - 1;
 
 
 MPIBackend::MPIBackend(int *argc, char ***argv) : CommunicationBackend() {
