@@ -120,11 +120,14 @@ class DataDispatcher:
             assert self.__data is not None
 
             replica = communicator.size
+
             if not root_keep_data:
                 replica -= 1
                 assert replica >= 1, f'{self.__name} has nothing todo'
 
             samples_per_replica = self.__samples // replica
+            samples_remain = self.__samples - samples_per_replica * replica
+
             for i in range(1, communicator.size):
                 # 主进程先收听其他进程拥有数据情况
                 msg = Message.listen(communicator)
@@ -133,7 +136,16 @@ class DataDispatcher:
 
                 begin = samples_per_replica * (
                     sender if root_keep_data else sender - 1)
+
+                if begin != 0:
+                    begin += samples_remain
+
                 end = min(begin + samples_per_replica, self.__samples)
+                # 多余的样例总是分给负责第一份数据的流水线
+
+                if begin == 0:
+                    end += samples_remain
+
                 data_indexes = msg_obj['data_indexes']
                 assert all(each < self.__data_count for each in data_indexes)
 
@@ -166,7 +178,8 @@ class DataDispatcher:
             if root_keep_data:
                 keep_data = []
                 for i in range(len(self.__data)):
-                    keep_data.append(self.__data[i][0:samples_per_replica])
+                    keep_data.append(self.__data[i][
+                                     0:samples_per_replica + samples_remain])
                 self.__data = tuple(keep_data)
         else:
             # 从进程先发送自己所拥有的数据的部分给主进程, -1 代表没有

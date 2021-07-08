@@ -1,55 +1,50 @@
 from ddl.log import info
 from ddl.message import Message
-from ddl.tensorflow.keras.parallelism.data import \
-    InitialParametersBroadcastCallBack
 from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
     MicroBatchController
 
 import json
 import tensorflow as tf
-from tensorflow.keras.callbacks import History, Callback
+from tensorflow.keras.callbacks import Callback
 import numpy as np
 from collections.abc import Iterable
+from typing import Tuple
 
 
-class TrainingExecutor:
+class PredictExecutor:
     class TrainingCallback(Callback):
         """
         后向传播结束回调函数
         """
 
-        def __init__(self, executor: 'TrainingExecutor'):
+        def __init__(self, executor: 'PredictExecutor'):
             super().__init__()
             self.__executor = executor
 
-        def on_train_batch_end(self, batch, logs=None):
+        def on_predict_batch_end(self, batch, logs=None):
             # 通知模型已经张量已经传输完毕, 或许可以通过op和C api进行通知, 但是有点复杂
             self.__executor.on_micro_batch_end(batch)
 
     def __init__(
             self, stage, micro_batch_controller: MicroBatchController,
             inputs_data: tuple, original_input_data_indexes: tuple or list,
-            targets_data: tuple, original_target_data_indexes: tuple or list,
-            batch_size: int, epochs: int,
+            batch_size: int,
             session: tf.compat.v1.Session,
             micro_batch_size: int = None,
             callbacks=None,
-            verbose: int = 1, **fit_args
+            verbose: int = 1, **predict_args
     ):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
         assert isinstance(stage, PipelineStage)
         assert len(original_input_data_indexes) == len(stage.input_pipes)
-        assert len(original_target_data_indexes) == len(stage.output_pipes)
 
         self.__original_input_data_indexes = original_input_data_indexes
-        self.__original_target_data_indexes = original_target_data_indexes
 
         self.__session = session
 
         self.__stage = stage
         self.__inputs_data = inputs_data
-        self.__targets_data = targets_data
         self.__pipeline_model_rank = stage.pipeline_model.pipeline_model_rank
         self.__pipeline_communicator = \
             stage.pipeline_model.pipeline_communicator
@@ -69,15 +64,6 @@ class TrainingExecutor:
 
         self.__pipeline_output_count = len(stage.output_pipes)
 
-        for i in range(len(stage.output_pipes)):
-            if original_target_data_indexes[i] is not None:
-                if self.__samples:
-                    assert self.__samples == \
-                           len(targets_data[original_target_data_indexes[i]])
-                else:
-                    self.__samples = len(
-                        targets_data[original_target_data_indexes[i]])
-
         self.__batch_size = batch_size
         self.__micro_batch_size = micro_batch_size if micro_batch_size else \
             batch_size
@@ -85,13 +71,10 @@ class TrainingExecutor:
         self.__micro_batch_inputs = []
 
         self.__stage_communicator = stage.pipeline_model.stage_communicator
-        # 第一次fit需要进行初始的变量广播, 这个变量用于记录是否需要进行初始变量广播
-        self.__do_initial_params_broadcast = self.__stage_communicator.size > 1
 
         self.__total_micro_batches, self.__micro_batches_per_batch = \
             self.__get_total_micro_batches()
 
-        self.__epochs = epochs
         self.__verbose = verbose
 
         if callbacks is None:
@@ -104,7 +87,7 @@ class TrainingExecutor:
 
         self.__micro_batch_controller = micro_batch_controller
 
-        self.__fit_args = fit_args
+        self.__predict_args = predict_args
 
     @property
     def stage(self):
@@ -114,13 +97,7 @@ class TrainingExecutor:
     def session(self) -> tf.compat.v1.Session:
         return self.__session
 
-    def run(self) -> History:
-        if self.__do_initial_params_broadcast:
-            self.__do_initial_params_broadcast = False
-            self.__callbacks.append(
-                InitialParametersBroadcastCallBack(
-                    0, self.__stage_communicator)
-            )
+    def run(self) -> np.ndarray or Tuple[np.ndarray]:
         self.__callbacks.append(self.TrainingCallback(self))
 
         info(f'total micro batches: {self.__total_micro_batches}')
@@ -132,21 +109,20 @@ class TrainingExecutor:
             verbose = self.__verbose
         else:
             verbose = 0
+
         with self.session.graph.as_default():
             with self.session.as_default():
-                history = self.stage.model.fit(
-                    self.__fit_data_generator(),
-                    steps_per_epoch=self.__total_micro_batches,
-                    epochs=self.__epochs,
+                result = self.stage.model.predict(
+                    self.__predict_data_generator(),
+                    steps=self.__total_micro_batches,
                     verbose=verbose,
                     callbacks=self.__callbacks,
-                    # 不允许使用多线程调用self.__fit_data_generator()
+                    # 不允许使用多线程调用self.__predict_data_generator()
                     workers=0,
-                    **self.__fit_args
+                    **self.__predict_args
                 )
-
         info('done returning')
-        return history
+        return result
 
     def on_micro_batch_end(self, batch: int):
         """
@@ -221,22 +197,7 @@ class TrainingExecutor:
                 result.append(self.__inputs_data[i][begin:end])
         return tuple(result)
 
-    def __get_micro_batch_targets(self, begin: int, end: int) -> tuple:
-        result = []
-        for i in range(len(self.__original_target_data_indexes)):
-            if self.__original_target_data_indexes[i] is None:
-                # 中间输出, 填入0数组
-                result.append(
-                    np.zeros((
-                        end - begin,
-                        *self.stage.output_pipes[i].shape
-                    ))
-                )
-            else:
-                result.append(self.__targets_data[i][begin:end])
-        return tuple(result)
-
-    def __fit_data_generator(self):
+    def __predict_data_generator(self):
         """
         模型训练的数据生成器
         :@return: 数据获取迭代器
@@ -279,13 +240,10 @@ class TrainingExecutor:
                 self.__micro_batch_inputs
             )
 
-            # 进行后向传播
             for i in range(len(self.__micro_batch_inputs)):
-                info(f'back propagation micro batch['
+                info(f'forward propagation micro batch['
                      f'{micro_batch_segments[i][0]},'
                      f' {micro_batch_segments[i][1]}]')
-                targets = self.__get_micro_batch_targets(
-                    *micro_batch_segments[i])
-                yield self.__micro_batch_inputs[i], targets
+                yield (self.__micro_batch_inputs[i],)
 
             batch_begin = 0 if batch_end >= self.__samples else batch_end

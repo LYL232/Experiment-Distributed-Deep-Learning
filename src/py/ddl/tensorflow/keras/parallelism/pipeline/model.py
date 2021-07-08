@@ -6,6 +6,8 @@ from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe, \
     PipelineInput
 from ddl.tensorflow.keras.parallelism.pipeline.training import \
     TrainingExecutor
+from ddl.tensorflow.keras.parallelism.pipeline.predict import \
+    PredictExecutor
 from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
     MicroBatchController
 from ddl.tensorflow import util
@@ -17,6 +19,8 @@ from tensorflow.keras.callbacks import History
 from tensorflow.python.keras import backend
 import tensorflow as tf
 import time
+import numpy as np
+from typing import Tuple
 
 
 def intermediate_loss(grad, output):
@@ -345,11 +349,11 @@ class PipelineModel(Model):
         """
         启动训练进程, 所有执行非最后一个Stage的进程将监听消息,
         参数比较复杂, todo: 还需研究研究每个Stage的参数的意义和如何分配
-        @param x: 非第一个Stage无效, 如果是DispatchingData实例, 那么会
-        @param y: 非最后一个Stage无效
+        @param x: 非输入Stage无效, 如果是DispatchingData实例, 那么会进行数据分发
+        @param y: 非输出Stage无效
         @param batch_size: 批次大小
         @param epochs: 训练轮次数
-        @param verbose: 非最后一个Stage为0, 这里指定的是最后一个stage的
+        @param verbose: 非最后一个Stage为0, 这里指定的是最后一个输出stage的
         @param callbacks: 回调函数
         @param validation_split:
         @param validation_data:
@@ -373,10 +377,12 @@ class PipelineModel(Model):
 
         assert workers is None, 'current version not support specify workers'
 
+        batch_size = int(batch_size)
         if micro_batch_size is not None:
-            batch_size = int(batch_size)
             micro_batch_size = int(micro_batch_size)
             micro_batch_size = min(micro_batch_size, batch_size)
+        else:
+            micro_batch_size = batch_size
 
         assert self._is_compiled, f'{Communicator.world().rank} not compiled'
         if not self.__work:
@@ -456,6 +462,66 @@ class PipelineModel(Model):
             res.history['data_dispatch_time'] = data_dispatch_time
         if clear_session:
             tf.keras.backend.clear_session()
+        return res
+
+    def predict(self,
+                x,
+                batch_size=None,
+                verbose=0,
+                steps=None,
+                callbacks=None,
+                max_queue_size=10,
+                workers=None,
+                use_multiprocessing=False,
+                micro_batch_size=None) -> np.ndarray or Tuple[np.ndarray]:
+        from ddl.tensorflow.keras.parallelism.pipeline.stage import \
+            PipelineStage
+
+        assert self._is_compiled, f'{Communicator.world().rank} not compiled'
+        if not self.__work:
+            return
+
+        if micro_batch_size is not None:
+            batch_size = int(batch_size)
+            micro_batch_size = int(micro_batch_size)
+            micro_batch_size = min(micro_batch_size, batch_size)
+
+        assert workers is None, 'current version not support specify workers'
+
+        stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
+        pipeline_inputs_data_indexes = []
+
+        if isinstance(x, DataDispatcher):
+            for each in stage.input_pipes:
+                if id(each) in self.__original_inputs_index.keys():
+                    pipeline_inputs_data_indexes.append(
+                        self.__original_inputs_index[id(each)]
+                    )
+                else:
+                    pipeline_inputs_data_indexes.append(None)
+            x = self.__dispatch_data(x, tuple(filter(
+                lambda a: a is not None,
+                pipeline_inputs_data_indexes
+            )))
+
+        predict_args = {
+            'callbacks': callbacks,
+            # 'steps': steps,  这个参数需要在训练过程中重定义
+            # 'validation_batch_size': validation_batch_size, 这个参数在静态图执行模式中无法识别
+            'max_queue_size': max_queue_size,
+            # 不允许使用worker参数, tensorflow 多线程调用session会出问题
+            # 'workers': workers,
+            'use_multiprocessing': use_multiprocessing,
+            'verbose': verbose
+        }
+
+        res = PredictExecutor(
+            stage, self.__micro_batch_controller,
+            x, pipeline_inputs_data_indexes,
+            session=self.__session,
+            batch_size=batch_size, micro_batch_size=micro_batch_size,
+            **predict_args
+        ).run()
         return res
 
     @staticmethod

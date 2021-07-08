@@ -1,6 +1,7 @@
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, \
     MaxPooling2D, Dropout, Reshape
 import tensorflow as tf
+import numpy as np
 
 
 def main():
@@ -24,7 +25,7 @@ def main():
         Dense(10, activation='softmax')
     ])
 
-    (data, label), _ = tf.keras.datasets.mnist.load_data(
+    (data, label), (test_data, test_label) = tf.keras.datasets.mnist.load_data(
         path='original-mnist.npz')
     world = Communicator.world()
     samples_per_rank = len(data) // world.size
@@ -57,10 +58,22 @@ def main():
 
     model.fit(
         x=data, y=label,
-        batch_size=100,
+        batch_size=1000,
         epochs=5, verbose=1 if world.rank == 0 else 0,
         callbacks=callbacks
     )
+
+    # 只需要0进程进行预测计算精确度即可
+    if world.rank == 0:
+        test_data = test_data / 255.0
+        predict = np.argmax(
+            model.predict(test_data, batch_size=1000, verbose=1), axis=-1)
+        assert len(test_label) == len(predict)
+        corrects = 0
+        for i in range(len(test_label)):
+            if test_label[i] == predict[i]:
+                corrects += 1
+        print(f'test accuracy: {corrects / float(len(test_label))}')
 
 
 if __name__ == '__main__':

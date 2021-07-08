@@ -188,21 +188,20 @@ class MicroBatchController:
         @param: micro_batch_inputs, 这一批次的微批次输入列表
         @return: None
         """
-        # 这里其实有一些浪费计算资源, 因为传输给下一个阶段计算了一次前向传播, 后面进行fit的时候
-        # 也计算了一次前向传播, todo: 可优化一次前向传播的计算, 或许可以直接调用优化器的apply_gradient
         assert len(micro_batch_inputs) > 0
-
-        self.session.run([
-            self.__init_micro_first_batch_size_op,
-            self.__init_micro_last_batch_size_op,
-            self.__init_micro_batches_op,
-            self.__init_current_micro_batch_op,
-            *self.__init_micro_batch_grads_ops
-        ], feed_dict={
-            self.__micro_batch_first_size_placeholder:
-                micro_batch_inputs[0][0].shape[0],
-            self.__micro_batch_last_size_placeholder:
-                micro_batch_inputs[-1][0].shape[0],
-            self.__micro_batch_sizes_placeholder:
-                len(micro_batch_inputs)
-        })
+        with self.session.graph.as_default():
+            with self.session.as_default():
+                self.session.run([
+                    self.__init_micro_first_batch_size_op,
+                    self.__init_micro_last_batch_size_op,
+                    self.__init_micro_batches_op,
+                    self.__init_current_micro_batch_op,
+                    *self.__init_micro_batch_grads_ops
+                ], feed_dict={
+                    self.__micro_batch_first_size_placeholder:
+                        micro_batch_inputs[0][0].shape[0],
+                    self.__micro_batch_last_size_placeholder:
+                        micro_batch_inputs[-1][0].shape[0],
+                    self.__micro_batch_sizes_placeholder:
+                        len(micro_batch_inputs)
+                })
