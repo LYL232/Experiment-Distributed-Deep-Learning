@@ -13,14 +13,15 @@ from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
 from ddl.tensorflow import util
 
 from sys import stderr
-from tensorflow.keras.models import Model as Model
+from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
-from tensorflow.keras.callbacks import History
+from tensorflow.keras.callbacks import History, ModelCheckpoint
 from tensorflow.python.keras import backend
 import tensorflow as tf
 import time
 import numpy as np
 from typing import Tuple
+import os
 
 
 def intermediate_loss(grad, output):
@@ -430,8 +431,56 @@ class PipelineModel(Model):
                 if data_dispatch_time is None else \
                 data_dispatch_time + time.time() - begin
 
+        # 因为不能所有的callback在分布式情况下都有效，所以需要过滤掉一些callback
+        filtered_callbacks = []
+        for each in callbacks:
+            if isinstance(each, ModelCheckpoint):
+                if self.__pipeline_model_rank == 0:
+                    # 只有第一个流水线的模型执行保存动作即可
+                    assert each.save_weights_only, \
+                        'only save weights allowed for now'
+
+                    dir_path = os.path.abspath(each.filepath)
+
+                    split_type_name = dir_path.split('.')
+                    assert len(split_type_name) > 0
+                    if len(split_type_name) > 1:
+                        type_name = split_type_name[-1]
+                        dir_path = '.'.join(
+                            split_type_name[:len(split_type_name) - 1])
+                    else:
+                        type_name = None
+                        dir_path = split_type_name[0]
+
+                    if type_name is None:
+                        type_name = 'h5'
+
+                    stage_rank = self.__pipeline_comm.rank
+
+                    if not os.path.exists(dir_path):
+                        os.makedirs(dir_path, exist_ok=True)
+
+                    model_path = os.path.join(
+                        dir_path, f'stage-{stage_rank}-model-'
+                                  f'epoch-{{epoch:02d}}.{type_name}')
+
+                    if len(stage.model.metrics_names) > 0:
+                        monitor = stage.model.metrics_names[0]
+                    else:
+                        monitor = ''
+                    filtered_callbacks.append(
+                        ModelCheckpoint(
+                            monitor=monitor,
+                            filepath=model_path,
+                            save_best_only=each.save_best_only,
+                            save_freq=each.save_freq,
+                            save_weights_only=True
+                        ))
+            else:
+                filtered_callbacks.append(each)
+
         fit_args = {
-            'callbacks': callbacks,
+            'callbacks': filtered_callbacks,
             'validation_split': validation_split,
             'validation_data': validation_data,
             'shuffle': shuffle,
@@ -464,16 +513,17 @@ class PipelineModel(Model):
             tf.keras.backend.clear_session()
         return res
 
-    def predict(self,
-                x,
-                batch_size=None,
-                verbose=0,
-                steps=None,
-                callbacks=None,
-                max_queue_size=10,
-                workers=None,
-                use_multiprocessing=False,
-                micro_batch_size=None) -> np.ndarray or Tuple[np.ndarray]:
+    def predict(
+            self,
+            x,
+            batch_size=None,
+            verbose=0,
+            steps=None,
+            callbacks=None,
+            max_queue_size=10,
+            workers=None,
+            use_multiprocessing=False,
+            micro_batch_size=None) -> np.ndarray or Tuple[np.ndarray]:
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
 
@@ -523,6 +573,56 @@ class PipelineModel(Model):
             **predict_args
         ).run()
         return res
+
+    def save_weights(self, dir_path, overwrite=True, save_format=None):
+        from ddl.tensorflow.keras.parallelism.pipeline.stage import \
+            PipelineStage
+        assert self._is_compiled
+        if not self.__work or self.pipeline_model_rank != 0:
+            return
+
+        dir_path = os.path.abspath(dir_path)
+
+        split_type_name = dir_path.split('.')
+        if len(split_type_name) > 1:
+            type_name = split_type_name[-1]
+            dir_path = '.'.join(split_type_name[:len(split_type_name) - 1])
+        else:
+            type_name = None
+            dir_path = split_type_name[0]
+
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+
+        stage_rank = self.__pipeline_comm.rank
+        stage: PipelineStage = self.__stages[stage_rank]
+
+        if type_name is None:
+            type_name = 'h5'
+
+        model_path = f'stage-{stage_rank}-model.{type_name}'
+        with self.__session.graph.as_default():
+            with self.__session.as_default():
+                stage.model.save_weights(
+                    os.path.join(dir_path, model_path), overwrite=overwrite,
+                    save_format=save_format
+                )
+
+    def load_weights(self, dir_path, by_name=False, skip_mismatch=False):
+        from ddl.tensorflow.keras.parallelism.pipeline.stage import \
+            PipelineStage
+        assert self._is_compiled, f'{Communicator.world().rank} not compiled'
+        if not self.__work:
+            return
+        if not os.path.isdir(dir_path):
+            raise ValueError(f'dir_path: {dir_path} must be a dir')
+        stage_rank = self.__pipeline_comm.rank
+        stage: PipelineStage = self.__stages[stage_rank]
+        model_path = f'stage-{stage_rank}-model.h5'
+        stage.model.load_weights(
+            os.path.join(dir_path, model_path),
+            by_name=by_name, skip_mismatch=skip_mismatch
+        )
 
     @staticmethod
     def __dispatch_data(

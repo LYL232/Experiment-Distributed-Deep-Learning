@@ -1,6 +1,7 @@
 import numpy as np
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, \
     MaxPooling2D, Dropout, Reshape
+from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow as tf
 import pickle
 
@@ -108,8 +109,18 @@ def main():
     model.fit(
         x=data, y=label,
         batch_size=1000, micro_batch_size=100,
-        epochs=5, verbose=1
+        epochs=5, verbose=1,
+        callbacks=[
+            ModelCheckpoint(
+                # todo: monitor
+                filepath='./3stages_checkpoints/',
+                # 目前只支持只保存权重
+                save_weights_only=True,
+            )
+        ]
     )
+
+    model.save_weights('./3stages_finished')
 
     result = model.predict(
         test_data, batch_size=1000, micro_batch_size=100, verbose=1)

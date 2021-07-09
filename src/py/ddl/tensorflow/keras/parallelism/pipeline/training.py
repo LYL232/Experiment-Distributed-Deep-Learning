@@ -97,7 +97,7 @@ class TrainingExecutor:
         if callbacks is None:
             self.__callbacks = []
         else:
-            if isinstance(Iterable, callbacks):
+            if isinstance(callbacks, Iterable):
                 self.__callbacks = [*callbacks]
             else:
                 self.__callbacks = [callbacks]
