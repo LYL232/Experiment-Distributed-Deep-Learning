@@ -1,5 +1,5 @@
 from ddl.tensorflow.communicator import Communicator
-from ddl.tensorflow.data_dispatcher import DataDispatcher
+from ddl.data import DistributedData
 from ddl.tensorflow.keras.parallelism.data import \
     data_parallelism_distributed_optimizer_wrapper
 from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe, \
@@ -18,7 +18,6 @@ from tensorflow.keras.optimizers import Optimizer
 from tensorflow.keras.callbacks import History, ModelCheckpoint
 from tensorflow.python.keras import backend
 import tensorflow as tf
-import time
 import numpy as np
 from typing import Tuple
 import os
@@ -376,6 +375,10 @@ class PipelineModel(Model):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
 
+        assert self._is_compiled, f'{Communicator.world().rank} not compiled'
+        if not self.__work:
+            return
+
         assert workers is None, 'current version not support specify workers'
 
         batch_size = int(batch_size)
@@ -385,51 +388,39 @@ class PipelineModel(Model):
         else:
             micro_batch_size = batch_size
 
-        assert self._is_compiled, f'{Communicator.world().rank} not compiled'
-        if not self.__work:
-            return
+        if not isinstance(x, (tuple, list)):
+            x = (x,)
+        if not isinstance(y, (tuple, list)):
+            y = (y,)
 
         assert 0 <= self.__pipeline_comm.rank < self.processes_require
         stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
+
         pipeline_inputs_data_indexes = []
         pipeline_targets_data_indexes = []
-
-        data_dispatch_time = None
-        if isinstance(x, DataDispatcher):
-            for each in stage.input_pipes:
-                if id(each) in self.__original_inputs_index.keys():
-                    pipeline_inputs_data_indexes.append(
-                        self.__original_inputs_index[id(each)]
-                    )
+        for pipes, data_indexes, original_index in [
+            (stage.input_pipes, pipeline_inputs_data_indexes,
+             self.__original_inputs_index),
+            (stage.output_pipes, pipeline_targets_data_indexes,
+             self.__original_outputs_index)
+        ]:
+            for each in pipes:
+                if id(each) in original_index.keys():
+                    data_indexes.append(original_index[id(each)])
                 else:
-                    pipeline_inputs_data_indexes.append(None)
-            begin = time.time()
-            x = self.__dispatch_data(
-                x, tuple(filter(
-                    lambda a: a is not None,
-                    pipeline_inputs_data_indexes
-                ))
-            )
-            data_dispatch_time = time.time() - begin
+                    data_indexes.append(None)
 
-        if isinstance(y, DataDispatcher):
-            for each in stage.output_pipes:
-                if id(each) in self.__original_outputs_index.keys():
-                    pipeline_targets_data_indexes.append(
-                        self.__original_outputs_index[id(each)]
+        for data, data_indexes in [
+            (x, set(pipeline_inputs_data_indexes)),
+            (y, set(pipeline_targets_data_indexes))
+        ]:
+            for i in range(len(data)):
+                if isinstance(data[i], DistributedData):
+                    need_data = True if i in data_indexes else False
+                    data[i].distribute(
+                        need_data,
+                        data[i].communicator.rank
                     )
-                else:
-                    pipeline_targets_data_indexes.append(None)
-            begin = time.time()
-            y = self.__dispatch_data(
-                y, tuple(filter(
-                    lambda a: a is not None,
-                    pipeline_targets_data_indexes
-                ))
-            )
-            data_dispatch_time = time.time() - begin \
-                if data_dispatch_time is None else \
-                data_dispatch_time + time.time() - begin
 
         # 因为不能所有的callback在分布式情况下都有效，所以需要过滤掉一些callback
         filtered_callbacks = []
@@ -507,8 +498,6 @@ class PipelineModel(Model):
             epochs=epochs,
             **fit_args
         ).run()
-        if data_dispatch_time is not None:
-            res.history['data_dispatch_time'] = data_dispatch_time
         if clear_session:
             tf.keras.backend.clear_session()
         return res
@@ -538,21 +527,30 @@ class PipelineModel(Model):
 
         assert workers is None, 'current version not support specify workers'
 
-        stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
-        pipeline_inputs_data_indexes = []
+        if not isinstance(x, (tuple, list)):
+            x = (x,)
 
-        if isinstance(x, DataDispatcher):
-            for each in stage.input_pipes:
-                if id(each) in self.__original_inputs_index.keys():
-                    pipeline_inputs_data_indexes.append(
-                        self.__original_inputs_index[id(each)]
-                    )
-                else:
-                    pipeline_inputs_data_indexes.append(None)
-            x = self.__dispatch_data(x, tuple(filter(
-                lambda a: a is not None,
-                pipeline_inputs_data_indexes
-            )))
+        stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
+
+        pipeline_inputs_data_indexes = []
+        for each in stage.input_pipes:
+            if id(each) in self.__original_inputs_index.keys():
+                pipeline_inputs_data_indexes.append(
+                    self.__original_inputs_index[id(each)]
+                )
+            else:
+                pipeline_inputs_data_indexes.append(None)
+
+        for each_data in x:
+            if isinstance(each_data, DistributedData):
+                need_data_indexes = tuple(filter(
+                    lambda a: a is not None,
+                    pipeline_inputs_data_indexes
+                ))
+                each_data.distribute(
+                    len(need_data_indexes) > 0,
+                    each_data.communicator.rank
+                )
 
         predict_args = {
             'callbacks': callbacks,
@@ -623,46 +621,6 @@ class PipelineModel(Model):
             os.path.join(dir_path, model_path),
             by_name=by_name, skip_mismatch=skip_mismatch
         )
-
-    @staticmethod
-    def __dispatch_data(
-            data_dispatcher: DataDispatcher,
-            data_indexes: tuple or list
-    ):
-        """
-        1. 分割通信域, 将root_rank(保存有数据的进程号)和所有其他需要数据的rank分割到
-        一个通信域内, 保证root_rank在新通信域内的rank是0
-        2. 在需要进行广播的通信域内以0为根节点广播
-        @param data_dispatcher: 进行操作的DispatchingData对象
-        @param data_indexes: 所需数据的索引
-        @return:
-         当need_dispatch==1 时, DispatchingData.data(),
-         否则 None
-        """
-        need_data = 1 if len(data_indexes) > 0 else 0
-
-        comm = data_dispatcher.communicator
-        root = data_dispatcher.root_rank
-
-        if comm.rank == root:
-            key = 0
-            # 根节点肯定需要参与数据分发的
-            root_keep_data = True if need_data != 0 else False
-            dispatch_data = 1
-        else:
-            key = 1 + comm.rank
-            root_keep_data = False
-            dispatch_data = need_data
-
-        dispatch_comm = comm.split_communicator(dispatch_data, key=key)
-
-        if dispatch_data == 1:
-            data_dispatcher.dispatch(
-                dispatch_comm, 0, data_indexes=data_indexes,
-                root_keep_data=root_keep_data
-            )
-            return data_dispatcher.data
-        return None
 
 
 class PipelineSequentialModel(PipelineModel):
