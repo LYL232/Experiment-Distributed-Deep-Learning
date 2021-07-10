@@ -190,7 +190,7 @@ class PredictExecutor:
                 result.append(
                     np.zeros((
                         end - begin,
-                        *self.stage.input_pipes[i].shape
+                        *self.stage.input_shape[i]
                     ))
                 )
             else:

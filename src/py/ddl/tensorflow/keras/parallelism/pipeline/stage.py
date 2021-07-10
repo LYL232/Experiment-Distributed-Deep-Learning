@@ -1,16 +1,23 @@
 from ddl.tensorflow.keras.parallelism.pipeline.model import PipelineModel
-from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe
+from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe, \
+    PipelineInput
 from ddl.tensorflow.keras.parallelism.pipeline.layer import \
     PipelineInputLayer, PipelineOutputLayer
 from ddl.tensorflow import util
+from ddl.message import Message
 
 from tensorflow.keras.models import Model
 from tensorflow.keras import Input
-from abc import ABCMeta
+from abc import ABCMeta, abstractmethod
+from typing import Tuple
+import json
 
 
 class PipelineStage(metaclass=ABCMeta):
-    def __init__(self):
+    def __init__(self, output_num: int):
+        """
+        @param output_num: 由于需要在模型加载前知道模型的输出个数，所以需要先将这个数通知给Stage
+        """
         self.__model = None
         self.__output_pipes = []
         self.__input_pipes = []
@@ -24,21 +31,33 @@ class PipelineStage(metaclass=ABCMeta):
         self.__built = False
         self.__called = False
 
+        self.__input_shape = None
+        self.__output_shape = None
+
+        assert output_num > 0
+        self.__output_num = output_num
+
+    @abstractmethod
     def call(self, *args, **kwargs):
         """
         @param args:
         @param kwargs:
         @return:
         """
-        raise NotImplementedError
 
     @property
-    def input_shape(self) -> tuple:
-        raise NotImplementedError
+    def output_num(self) -> int:
+        return self.__output_num
 
     @property
-    def output_shape(self) -> tuple:
-        raise NotImplementedError
+    def input_shape(self) -> Tuple[Tuple[int]]:
+        assert self.__built
+        return self.__input_shape
+
+    @property
+    def output_shape(self) -> Tuple[Tuple[int]]:
+        assert self.__built
+        return self.__output_shape
 
     @property
     def model(self) -> Model:
@@ -84,11 +103,12 @@ class PipelineStage(metaclass=ABCMeta):
         self.__stage_rank = stage_rank
 
     def build(self) -> None:
-        input_shape = util.formalize_shapes(self.input_shape)
+        self.__input_shape = self.__prepare_input_shape()
+
         self.__pipeline_input_tensors = []
         self.__input_tensors = []
-        for i in range(len(input_shape)):
-            shape = input_shape[i]
+        for i in range(len(self.__input_shape)):
+            shape = self.__input_shape[i]
             this_inputs = Input(shape=shape)
             self.__input_tensors.append(this_inputs)
             self.__pipeline_input_tensors.append(
@@ -101,9 +121,8 @@ class PipelineStage(metaclass=ABCMeta):
 
         if not isinstance(outputs, (tuple, list)):
             outputs = (outputs,)
-        output_shape = util.formalize_shapes(self.output_shape)
         self.__output_tensors = []
-        for i in range(len(output_shape)):
+        for i in range(len(self.__output_pipes)):
             self.__output_tensors.append(
                 PipelineOutputLayer(
                     self, self.__output_pipes[i],
@@ -113,35 +132,45 @@ class PipelineStage(metaclass=ABCMeta):
         self.__model = Model(
             inputs=self.__input_tensors, outputs=self.__output_tensors
         )
+
+        # 去掉output_shape中的第一维，也即批次维度
+        model_output_shape = self.__model.output_shape
+        assert len(model_output_shape) > 0
+        if not isinstance(model_output_shape[0], (tuple, list)):
+            model_output_shape = (model_output_shape,)
+
+        output_shape = []
+        for each in model_output_shape:
+            if len(each) > 1:
+                output_shape.append((*each[1:],))
+            else:
+                output_shape.append((1,))
+
+        self.__output_shape = util.formalize_shapes(output_shape)
+
+        assert len(self.__output_shape) == self.output_num
+        self.__notify_output_shape()
+
         self.__built = True
 
     def __call__(self, *args, **kwargs) -> tuple or PipelinePipe:
         assert not self.__called, 'can not call PipelineStage more than once'
 
-        input_shape = util.formalize_shapes(self.input_shape)
-        input_count = len(input_shape)
-
-        assert len(args) == input_count
-
-        for i in range(input_count):
+        for i in range(len(args)):
             pipe = args[i]
             assert isinstance(pipe, PipelinePipe)
-            assert pipe.shape == input_shape[i], \
-                f'not the same input shape, incoming: {args},' \
-                f' required: {input_shape}'
             self.__input_pipes.append(pipe)
             pipe.send_to_stage(self, i)
 
         self.__called = True
 
-        output_shape = util.formalize_shapes(self.output_shape)
-        for i in range(len(output_shape)):
-            self.__output_pipes.append(PipelinePipe(output_shape[i], self, i))
+        for i in range(self.output_num):
+            self.__output_pipes.append(PipelinePipe(self, i))
 
-        if len(self.output_pipes) > 1:
+        if self.output_num > 1:
             return self.output_pipes
         else:
-            assert len(self.output_pipes) > 0
+
             return self.output_pipes[0]
 
     def __str__(self):
@@ -149,3 +178,39 @@ class PipelineStage(metaclass=ABCMeta):
 
     def __repr__(self):
         return self.__str__()
+
+    def __prepare_input_shape(self):
+        input_shape = []
+        receive_required = 0
+        for i in range(len(self.__input_pipes)):
+            pipe: PipelinePipe = self.__input_pipes[i]
+            if isinstance(pipe, PipelineInput):
+                # 是直接输入，可以获取形状
+                input_shape.append(pipe.shape)
+            else:
+                input_shape.append(None)
+                receive_required += 1
+
+        pipeline_comm = self.pipeline_model.pipeline_communicator
+
+        while receive_required > 0:
+            msg = json.loads(Message.listen(pipeline_comm).msg)
+            shape = tuple(msg['shape'])
+            index = int(msg['input_index'])
+            assert input_shape[index] is None, \
+                f'input-{index} of stage-{self.stage_rank} receive shape twice'
+            input_shape[index] = shape
+            receive_required -= 1
+
+        return tuple(input_shape)
+
+    def __notify_output_shape(self):
+        pipeline_communicator = self.pipeline_model.pipeline_communicator
+        for i in range(len(self.__output_pipes)):
+            pipe: PipelinePipe = self.__output_pipes[i]
+            for stage in pipe.send_to:
+                stage: PipelineStage
+                Message.send(json.dumps({
+                    'shape': self.__output_shape[i],
+                    'input_index': pipe.index_of(stage)
+                }), stage.stage_rank, pipeline_communicator)

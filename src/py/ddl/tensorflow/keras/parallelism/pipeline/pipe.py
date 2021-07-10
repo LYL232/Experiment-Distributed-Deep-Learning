@@ -7,7 +7,7 @@ class PipelinePipe:
     """
 
     def __init__(
-            self, shape: Tuple[int], comes_from=None, output_index: int = -1):
+            self, comes_from=None, output_index: int = -1):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
         if comes_from is not None:
@@ -17,11 +17,6 @@ class PipelinePipe:
             self.__index_of = {}
         self.__comes_from = comes_from
         self.__send_to = []
-        self.__shape = shape
-
-    @property
-    def shape(self) -> Tuple[int]:
-        return self.__shape
 
     @property
     def comes_from(self):
@@ -49,8 +44,8 @@ class PipelinePipe:
         send_to_str = ','.join([str(id(each)) for each in self.__send_to])
         return \
             f'PipelinePipe{{' \
-            f' comes_from: {comes_from_str},' \
-            f' shape: {self.__shape}, send_to: {send_to_str}' \
+            f' comes_from: {comes_from_str}' \
+            f' , send_to: {send_to_str}' \
             f' }}'
 
     def __repr__(self):
@@ -59,4 +54,9 @@ class PipelinePipe:
 
 class PipelineInput(PipelinePipe):
     def __init__(self, shape: tuple):
-        super().__init__(shape)
+        super().__init__()
+        self.__shape = shape
+
+    @property
+    def shape(self) -> Tuple[int]:
+        return self.__shape

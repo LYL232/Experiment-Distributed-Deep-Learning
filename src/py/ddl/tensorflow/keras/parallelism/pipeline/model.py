@@ -628,13 +628,13 @@ class PipelineSequentialModel(PipelineModel):
     流水线序列模型
     """
 
-    def __init__(self, stages: list, *args, **kwargs):
+    def __init__(self, stages: list, input_shape: tuple, *args, **kwargs):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
         assert len(stages) > 0
         assert all(isinstance(each, PipelineStage) for each in stages)
 
-        input_shape = util.formalize_shapes(stages[0].input_shape)
+        input_shape = util.formalize_shapes(input_shape)
         inputs = tuple(PipelineInput(shape=each) for each in input_shape)
         sequential = inputs
         for each in stages:

@@ -13,21 +13,19 @@ def main():
     tf.compat.v1.disable_eager_execution()
 
     class Stage0(PipelineStage):
+        def __init__(self):
+            super().__init__(output_num=2)
+
         def call(self, inputs):
             branch_0 = Reshape((28, 28, 1))(inputs)
             branch_1 = Flatten()(inputs)
             branch_1 = Dense(32, activation='relu')(branch_1)
             return branch_0, branch_1
 
-        @property
-        def input_shape(self):
-            return 28, 28
-
-        @property
-        def output_shape(self):
-            return (28, 28, 1), (32,)
-
     class Stage1(PipelineStage):
+        def __init__(self):
+            super().__init__(output_num=2)
+
         def call(self, branch_0, branch_1):
             branch_0 = Conv2D(4, [3, 3], activation='relu')(branch_0)
             branch_0 = Conv2D(8, [3, 3], activation='relu')(branch_0)
@@ -40,43 +38,25 @@ def main():
             branch_1 = Flatten()(branch_1)
             return branch_0, branch_1
 
-        @property
-        def input_shape(self):
-            return (28, 28, 1), (32,)
-
-        @property
-        def output_shape(self):
-            return (1152,), (64,)
-
     class Stage2(PipelineStage):
+        def __init__(self):
+            super().__init__(output_num=3)
+
         def call(self, branch_0, branch_1):
             branch_2 = Dense(48, activation='relu')(branch_0)
             branch_3 = Dense(56, activation='relu')(branch_1)
             branch_4 = Dense(60, activation='relu')(branch_1)
             return branch_2, branch_3, branch_4
 
-        @property
-        def input_shape(self):
-            return (1152,), (64,)
-
-        @property
-        def output_shape(self):
-            return (48,), (56,), (60,)
-
     class Stage3(PipelineStage):
+        def __init__(self):
+            super().__init__(output_num=1)
+
         def call(self, branch_0, branch_1, branch_2, branch_3, branch_4):
             merged = concatenate(
                 [branch_0, branch_1, branch_2, branch_3, branch_4], axis=1)
             outputs = Dense(10, activation='softmax')(merged)
             return outputs
-
-        @property
-        def input_shape(self):
-            return (1152,), (64,), (48,), (56,), (60,)
-
-        @property
-        def output_shape(self):
-            return (10,)
 
     input_tensor = PipelineInput(shape=(28, 28))
 

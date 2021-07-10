@@ -25,6 +25,9 @@ def main():
     # ]
 
     class Stage0(PipelineStage):
+        def __init__(self):
+            super().__init__(output_num=1)
+
         def call(self, inputs):
             res = Reshape((28, 28, 1))(inputs)
             res = Conv2D(32, [3, 3], activation='relu')(res)
@@ -34,30 +37,17 @@ def main():
             res = Flatten()(res)
             return res
 
-        @property
-        def input_shape(self):
-            return 28, 28
-
-        @property
-        def output_shape(self):
-            return 9216
-
     class Stage1(PipelineStage):
+        def __init__(self):
+            super().__init__(output_num=1)
+
         def call(self, inputs):
             res = Dense(128, activation='relu')(inputs)
             res = Dropout(0.5)(res)
             res = Dense(10, activation='softmax')(res)
             return res
 
-        @property
-        def input_shape(self):
-            return 9216
-
-        @property
-        def output_shape(self):
-            return 10
-
-    model = PipelineSequentialModel([Stage0(), Stage1()])
+    model = PipelineSequentialModel([Stage0(), Stage1()], input_shape=(28, 28))
 
     data = MnistDistributedTrainData()
     label = MnistDistributedTrainLabel()
