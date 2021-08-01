@@ -11,8 +11,6 @@ def main():
     from ddl.tensorflow.keras.parallelism.data import \
         InitialParametersBroadcastCallBack
 
-    tf.compat.v1.disable_eager_execution()
-
     model = tf.keras.Sequential([
         Reshape(input_shape=(28, 28), target_shape=(28, 28, 1)),
         Conv2D(32, [3, 3], activation='relu'),

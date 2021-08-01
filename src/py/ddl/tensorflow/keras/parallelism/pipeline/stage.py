@@ -1,11 +1,13 @@
 from ddl.tensorflow.keras.parallelism.pipeline.model import PipelineModel
 from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe, \
     PipelineInput
+from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.keras.parallelism.pipeline.layer import \
     PipelineInputLayer, PipelineOutputLayer
 from ddl.tensorflow import util
 from ddl.message import Message
 
+from tensorflow import control_dependencies
 from tensorflow.keras.models import Model
 from tensorflow.keras import Input
 from abc import ABCMeta, abstractmethod
@@ -121,6 +123,7 @@ class PipelineStage(metaclass=ABCMeta):
 
         if not isinstance(outputs, (tuple, list)):
             outputs = (outputs,)
+
         self.__output_tensors = []
         for i in range(len(self.__output_pipes)):
             self.__output_tensors.append(
@@ -130,7 +133,8 @@ class PipelineStage(metaclass=ABCMeta):
                 )(outputs[i])
             )
         self.__model = Model(
-            inputs=self.__input_tensors, outputs=self.__output_tensors
+            inputs=self.__input_tensors,
+            outputs=self.__output_tensors
         )
 
         # 去掉output_shape中的第一维，也即批次维度
@@ -214,3 +218,45 @@ class PipelineStage(metaclass=ABCMeta):
                     'shape': self.__output_shape[i],
                     'input_index': pipe.index_of(stage)
                 }), stage.stage_rank, pipeline_communicator)
+
+    def __get_output_layer_send_ops(self, outputs: tuple or list):
+        # 为了防止阶段与阶段间的死锁，需要按照接收阶段的拓扑序来安排每个发送张量的Op顺序
+        forward_send_to = {}
+        for i, pipe in enumerate(self.__output_pipes):
+            for j, stage in enumerate(pipe.send_to):
+                stage_rank = stage.stage_rank
+                if stage.stage_rank not in forward_send_to.keys():
+                    forward_send_to[stage_rank] = []
+                forward_send_to[stage_rank].append((i, j, stage))
+
+        communicator = self.pipeline_model.pipeline_communicator
+        pipeline_model_rank = self.pipeline_model.pipeline_model_rank
+
+        output_layer_send_ops = [[] for _ in range(len(self.__output_pipes))]
+        last_stage_send_ops = []
+        for stage_rank in sorted(list(forward_send_to.keys())):
+            current_stage_send_ops = []
+            for i, j, recv_stage in forward_send_to[stage_rank]:
+                assert i < len(output_layer_send_ops)
+                send_ops = output_layer_send_ops[i]
+                output = outputs[i]
+                sending_to_input_index = \
+                    self.output_pipes[i].index_of(recv_stage)
+                while j >= len(output_layer_send_ops[i]):
+                    send_ops.append(j)
+                with control_dependencies(last_stage_send_ops):
+                    send_op = CPPBackend.tf_lib().forward_and_send(
+                        output, output,
+                        receiver=recv_stage.stage_rank,
+                        tag=sending_to_input_index,
+                        communicator_id=communicator.id,
+                        name=f'pipeline-{pipeline_model_rank}-stage-'
+                             f'{self.stage_rank}-output-'
+                             f'{i}-forward-to-stage-'
+                             f'{recv_stage.stage_rank}-input-'
+                             f'{sending_to_input_index}'
+                    )
+                    send_ops[j] = send_op
+                    current_stage_send_ops.append(send_op)
+            last_stage_send_ops = current_stage_send_ops
+        return output_layer_send_ops

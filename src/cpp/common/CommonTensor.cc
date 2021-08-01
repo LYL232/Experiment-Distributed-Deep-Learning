@@ -13,7 +13,6 @@ CommonTensorShape::CommonTensorShape(CommonTensorShape &&other) :
         shape_(std::move(other.shape_)), numElements_(other.numElements_) {}
 
 void CommonTensorShape::addDim(size_t dim) {
-    assert(dim > 0);
     shape_.emplace_back(dim);
     numElements_ = 0;
 }

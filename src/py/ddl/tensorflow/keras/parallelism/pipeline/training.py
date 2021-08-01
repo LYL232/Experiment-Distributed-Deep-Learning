@@ -2,11 +2,14 @@ from ddl.log import info
 from ddl.message import Message
 from ddl.tensorflow.keras.parallelism.data import \
     InitialParametersBroadcastCallBack
+from ddl.tensorflow.util import executing_eagerly
 from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
     MicroBatchController
 
 import json
 import tensorflow as tf
+from tensorflow.python.keras.engine.training_v1 import Model as ModelV1
+from tensorflow.python.keras.engine.training import Model as ModelV2
 from tensorflow.keras.callbacks import History, Callback
 import numpy as np
 from collections.abc import Iterable
@@ -71,12 +74,13 @@ class TrainingExecutor:
 
         for i in range(len(stage.output_pipes)):
             if original_target_data_indexes[i] is not None:
+                target = targets_data[original_target_data_indexes[i]]
+                if target is None:
+                    continue
                 if self.__samples:
-                    assert self.__samples == \
-                           len(targets_data[original_target_data_indexes[i]])
+                    assert self.__samples == len(target)
                 else:
-                    self.__samples = len(
-                        targets_data[original_target_data_indexes[i]])
+                    self.__samples = len(target)
 
         self.__batch_size = batch_size
         self.__micro_batch_size = micro_batch_size if micro_batch_size else \
@@ -132,20 +136,32 @@ class TrainingExecutor:
             verbose = self.__verbose
         else:
             verbose = 0
-        with self.session.graph.as_default():
-            with self.session.as_default():
-                history = self.stage.model.fit(
-                    self.__fit_data_generator(),
-                    steps_per_epoch=self.__total_micro_batches,
-                    epochs=self.__epochs,
-                    verbose=verbose,
-                    callbacks=self.__callbacks,
-                    # 不允许使用多线程调用self.__fit_data_generator()
-                    workers=0,
-                    **self.__fit_args
-                )
+        if executing_eagerly():
+            history = self.stage.model.fit(
+                self.__fit_data_generator(),
+                steps_per_epoch=self.__total_micro_batches,
+                epochs=self.__epochs,
+                verbose=verbose,
+                callbacks=self.__callbacks,
+                # 不允许使用多线程调用self.__fit_data_generator()
+                workers=0,
+                **self.__fit_args
+            )
+        else:
+            with self.session.graph.as_default():
+                with self.session.as_default():
+                    history = self.stage.model.fit(
+                        self.__fit_data_generator(),
+                        steps_per_epoch=self.__total_micro_batches,
+                        epochs=self.__epochs,
+                        verbose=verbose,
+                        callbacks=self.__callbacks,
+                        # 不允许使用多线程调用self.__fit_data_generator()
+                        workers=0,
+                        **self.__fit_args
+                    )
 
-        info('done returning')
+        info('training done returning')
         return history
 
     def on_micro_batch_end(self, batch: int):
@@ -221,20 +237,32 @@ class TrainingExecutor:
                 result.append(self.__inputs_data[i][begin:end])
         return tuple(result)
 
-    def __get_micro_batch_targets(self, begin: int, end: int) -> tuple:
-        result = []
-        for i in range(len(self.__original_target_data_indexes)):
+    def __get_micro_batch_targets(self, begin: int, end: int) -> dict:
+        result = {}
+        model = self.__stage.model
+        if isinstance(model, ModelV1):
+            # noinspection PyProtectedMember
+            outputs_names = self.__stage.model._feed_output_names
+        else:
+            assert isinstance(model, ModelV2)
+            outputs_names = model.output_names
+        for i, name in enumerate(outputs_names):
             if self.__original_target_data_indexes[i] is None:
                 # 中间输出, 填入0数组
-                result.append(
+                result[name] = \
                     np.zeros((
                         end - begin,
                         *self.stage.output_shape[i]
                     ))
-                )
             else:
-                result.append(self.__targets_data[i][begin:end])
-        return tuple(result)
+                data = self.__targets_data[i]
+                if data is None:
+                    shape = [0 if each is None else each
+                             for each in self.stage.output_shape[i]]
+                    result[name] = np.zeros((end - begin, *shape))
+                else:
+                    result[name] = self.__targets_data[i][begin:end]
+        return result
 
     def __fit_data_generator(self):
         """

@@ -7,7 +7,9 @@ class PipelinePipe:
     """
 
     def __init__(
-            self, comes_from=None, output_index: int = -1):
+            self, comes_from=None, output_index: int = -1,
+            convey_gradient: bool = True
+    ):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
         if comes_from is not None:
@@ -17,6 +19,7 @@ class PipelinePipe:
             self.__index_of = {}
         self.__comes_from = comes_from
         self.__send_to = []
+        self.__convey_gradient = convey_gradient
 
     @property
     def comes_from(self):
@@ -28,6 +31,12 @@ class PipelinePipe:
 
     def index_of(self, stage) -> int:
         return self.__index_of[id(stage)]
+
+    def convey_gradient(self, set_value: bool = None) -> bool:
+        if set_value is not None:
+            assert isinstance(set_value, bool)
+            self.__convey_gradient = set_value
+        return self.__convey_gradient
 
     def send_to_stage(self, stage, input_index: int) -> None:
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \

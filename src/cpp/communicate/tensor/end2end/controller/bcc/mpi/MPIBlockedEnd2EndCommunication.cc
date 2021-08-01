@@ -33,7 +33,7 @@ StatusCode MPIBlockedEnd2EndCommunication::send(
 #endif
     // todo: check status
     request.done(STATUS_OK);
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TF_OP_INTERACTION
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_TF_OP_INTERACTION
     GLOBAL_INFO_WITH_THREAD_ID("tensor:" << request.key() << " done send")
 #endif
     return STATUS_OK;
@@ -60,7 +60,7 @@ StatusCode MPIBlockedEnd2EndCommunication::receive(
 #endif
     // todo: check status
     request.done(STATUS_OK);
-#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_TF_OP_INTERACTION
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BLOCKED_END2END_COMMUNICATE_LOG_TF_OP_INTERACTION
     GLOBAL_INFO_WITH_THREAD_ID("tensor:" << request.key() << " done receive")
 #endif
     return STATUS_OK;

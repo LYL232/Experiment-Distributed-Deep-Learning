@@ -2,6 +2,7 @@ from ddl.log import info
 from ddl.message import Message
 from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
     MicroBatchController
+from ddl.tensorflow.util import executing_eagerly
 
 import json
 import tensorflow as tf
@@ -110,18 +111,29 @@ class PredictExecutor:
         else:
             verbose = 0
 
-        with self.session.graph.as_default():
-            with self.session.as_default():
-                result = self.stage.model.predict(
-                    self.__predict_data_generator(),
-                    steps=self.__total_micro_batches,
-                    verbose=verbose,
-                    callbacks=self.__callbacks,
-                    # 不允许使用多线程调用self.__predict_data_generator()
-                    workers=0,
-                    **self.__predict_args
-                )
-        info('done returning')
+        if executing_eagerly():
+            result = self.stage.model.predict(
+                self.__predict_data_generator(),
+                steps=self.__total_micro_batches,
+                verbose=verbose,
+                callbacks=self.__callbacks,
+                # 不允许使用多线程调用self.__predict_data_generator()
+                workers=0,
+                **self.__predict_args
+            )
+        else:
+            with self.session.graph.as_default():
+                with self.session.as_default():
+                    result = self.stage.model.predict(
+                        self.__predict_data_generator(),
+                        steps=self.__total_micro_batches,
+                        verbose=verbose,
+                        callbacks=self.__callbacks,
+                        # 不允许使用多线程调用self.__predict_data_generator()
+                        workers=0,
+                        **self.__predict_args
+                    )
+        info('predict done returning')
         return result
 
     def on_micro_batch_end(self, batch: int):

@@ -9,8 +9,6 @@ def main():
         PipelineSequentialModel
     from ddl.tensorflow.keras.parallelism.pipeline.stage import PipelineStage
 
-    tf.compat.v1.disable_eager_execution()
-
     # 原模型定义:
     # [
     #     Reshape((28, 28, 1)),
@@ -61,8 +59,6 @@ def main():
     data = MnistDistributedTrainData()
     label = MnistDistributedTrainLabel()
 
-    # 设置`experimental_run_tf_function=False` 让TensorFlow
-    # 使用opt计算梯度
     # noinspection PyTypeChecker
     model.compile(
         loss=tf.losses.SparseCategoricalCrossentropy(),

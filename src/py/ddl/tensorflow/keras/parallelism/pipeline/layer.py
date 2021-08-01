@@ -1,11 +1,12 @@
 from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe
+from ddl.tensorflow.util import executing_eagerly
 from tensorflow.keras.layers import Layer
 import tensorflow as tf
+from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 
 
 class PipelineInputLayer(Layer):
-
     def __init__(
             self, stage, pipe: PipelinePipe,
             name=None, dtype=None, dynamic=False, input_shape=None,
@@ -26,9 +27,11 @@ class PipelineInputLayer(Layer):
         self.__pipe = pipe
         self.__fake_kernel = None
         self.__pipeline_model_rank = stage.pipeline_model.pipeline_model_rank
+        self.__convey_gradient = pipe.convey_gradient()
 
     def build(self, input_shape):
-        self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
+        if self.__pipe.comes_from is not None:
+            self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
         self.built = True
 
     def compute_output_shape(self, input_shape):
@@ -37,6 +40,21 @@ class PipelineInputLayer(Layer):
     @tf.autograph.experimental.do_not_convert
     def call(self, inputs, **kwargs):
         assert self.__communicator is not None
+
+        if self.__pipe.comes_from is None:
+            return inputs
+
+        forward = CPPBackend.tf_lib().receive_tensor(
+            inputs,
+            sender=self.__pipe.comes_from.stage_rank,
+            communicator_id=self.__communicator.id,
+            tag=self.__pipe.index_of(self.__stage),
+            name=f'pipeline-{self.__pipeline_model_rank}-'
+                 f'stage-{self.__communicator.rank}-'
+                 f'input-{self.__pipe.index_of(self.__stage)}-'
+                 f'receive-forward-from-stage-'
+                 f'{self.__pipe.comes_from.stage_rank}'
+        )
 
         @tf.custom_gradient
         def pipeline_input(x, _):
@@ -49,40 +67,28 @@ class PipelineInputLayer(Layer):
             """
 
             def grad(dy):
-                if self.__pipe.comes_from is None:
-                    return None, tf.zeros((1,))
-                fake_grad = CPPBackend.tf_lib().forward_and_send(
-                    tf.zeros((1,)), dy,
-                    receiver=self.__pipe.comes_from.stage_rank,
-                    tag=self.__pipe.index_of(self.__stage),
-                    communicator_id=self.__communicator.id,
-                    name=f'gradients-of-stage-'
-                         f'{self.__pipe.comes_from.stage_rank}-pipeline-input-'
-                         f'{self.__pipe.index_of(self.__pipe.comes_from)}'
-                )
+                if self.__convey_gradient:
+                    fake_grad = CPPBackend.tf_lib().forward_and_send(
+                        tf.zeros((1,)), dy,
+                        receiver=self.__pipe.comes_from.stage_rank,
+                        tag=self.__pipe.index_of(self.__stage),
+                        communicator_id=self.__communicator.id,
+                        name=f'gradients-of-stage-'
+                             f'{self.__pipe.comes_from.stage_rank}'
+                             f'-pipeline-input-'
+                             f'{self.__pipe.index_of(self.__pipe.comes_from)}'
+                    )
+                else:
+                    fake_grad = tf.reshape(
+                        tf.reduce_sum(dy, axis=None), shape=(1,)) * 0
                 return None, fake_grad
 
-            if self.__pipe.comes_from is None:
-                forward = tf.identity(x)
-            else:
-                forward = CPPBackend.tf_lib().receive_tensor(
-                    x,
-                    sender=self.__pipe.comes_from.stage_rank,
-                    communicator_id=self.__communicator.id,
-                    tag=self.__pipe.index_of(self.__stage),
-                    name=f'pipeline-{self.__pipeline_model_rank}-'
-                         f'stage-{self.__communicator.rank}-'
-                         f'input-{self.__pipe.index_of(self.__stage)}-'
-                         f'receive-forward-from-stage-'
-                         f'{self.__pipe.comes_from.stage_rank}'
-                )
-            return forward, grad
+            return x, grad
 
-        return pipeline_input(inputs, self.__fake_kernel)
+        return pipeline_input(forward, self.__fake_kernel)
 
 
 class PipelineOutputLayer(Layer):
-
     def __init__(
             self, stage, pipe: PipelinePipe,
             name=None, dtype=None, dynamic=False, input_shape=None,
@@ -103,9 +109,11 @@ class PipelineOutputLayer(Layer):
         self.__pipe = pipe
         self.__pipeline_model_rank = stage.pipeline_model.pipeline_model_rank
         self.__fake_kernel = None
+        self.__convey_gradient = pipe.convey_gradient()
 
     def build(self, input_shape):
-        self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
+        if len(self.__pipe.send_to) > 0:
+            self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
         self.built = True
 
     def compute_output_shape(self, input_shape):
@@ -118,6 +126,15 @@ class PipelineOutputLayer(Layer):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
 
+        if len(self.__pipe.send_to) == 0:
+            return inputs
+
+        if isinstance(inputs, ResourceVariable):
+            if not executing_eagerly():
+                raise TypeError(
+                    f'pipeline output not support type {type(inputs)} when'
+                    f'execute eagerly')
+
         @tf.custom_gradient
         def pipeline_output(x, _):
             """
@@ -129,27 +146,34 @@ class PipelineOutputLayer(Layer):
 
             # 定义后向传播图
             def grad(dy):
-                if len(self.__pipe.send_to) == 0:
-                    return dy, tf.zeros((1,))
-                recv_grad_ops = []
-                for recv_from_stage in self.__pipe.send_to:
-                    assert isinstance(recv_from_stage, PipelineStage)
-                    recv_from_input_index = self.__pipe.index_of(send_to_stage)
-                    recv_grad_ops.append(
-                        CPPBackend.tf_lib().receive_tensor(
-                            tf.zeros_like(dy),
-                            sender=recv_from_stage.stage_rank,
-                            tag=recv_from_input_index,
-                            name=f'pipeline-{self.__pipeline_model_rank}-stage-'
-                                 f'{self.__stage.stage_rank}-'
-                                 f'backward-gradient-from-stage-'
-                                 f'{recv_from_stage.stage_rank}-input-'
-                                 f'{recv_from_input_index}',
-                            # 这里要传入handle(整数值), 而不是一个python对象
-                            communicator_id=self.__communicator.id
+                if self.__convey_gradient:
+                    recv_grad_ops = []
+                    dy = tf.zeros_like(dy)
+                    for recv_from_stage in self.__pipe.send_to:
+                        assert isinstance(recv_from_stage, PipelineStage)
+                        recv_from_input_index = self.__pipe.index_of(
+                            recv_from_stage)
+
+                        recv_grad_ops.append(
+                            CPPBackend.tf_lib().receive_tensor(
+                                dy,
+                                sender=recv_from_stage.stage_rank,
+                                tag=recv_from_input_index,
+                                name=f'pipeline-'
+                                     f'{self.__pipeline_model_rank}'
+                                     f'-stage-'
+                                     f'{self.__stage.stage_rank}-'
+                                     f'backward-gradient-from-stage-'
+                                     f'{recv_from_stage.stage_rank}-input-'
+                                     f'{recv_from_input_index}',
+                                # 这里要传入handle(整数值), 而不是一个python对象
+                                communicator_id=self.__communicator.id
+                            )
                         )
-                    )
-                recv_grad = tf.add_n(recv_grad_ops)
+
+                    recv_grad = tf.add_n(recv_grad_ops)
+                else:
+                    recv_grad = tf.zeros_like(dy)
                 # 为了欺骗tensorflow这里有梯度需要计算, 如果不加这一句那么如果之前的层
                 # 不需要recv_grad
                 fake_grad = CPPBackend.tf_lib().do_but_pass_by(
@@ -157,23 +181,27 @@ class PipelineOutputLayer(Layer):
                 )
                 return recv_grad, fake_grad
 
-            # 定义前向传播发送结果静态图
-            output_index = self.__pipe.index_of(self.__stage)
-            for send_to_stage in self.__pipe.send_to:
-                assert isinstance(send_to_stage, PipelineStage)
-                sending_to_input_index = self.__pipe.index_of(send_to_stage)
-                x = CPPBackend.tf_lib().forward_and_send(
+            # 确保所有分支都会被计算到
+            merged_send_ops = None
+            for i, recv_stage in enumerate(self.__pipe.send_to):
+                sending_to_input_index = self.__pipe.index_of(recv_stage)
+                send_op = CPPBackend.tf_lib().forward_and_send(
                     x, x,
-                    receiver=send_to_stage.stage_rank,
+                    receiver=recv_stage.stage_rank,
                     tag=sending_to_input_index,
                     communicator_id=self.__communicator.id,
                     name=f'pipeline-{self.__pipeline_model_rank}-stage-'
                          f'{self.__stage.stage_rank}-output-'
-                         f'{output_index}-forward-to-stage-'
-                         f'{send_to_stage.stage_rank}-input-'
+                         f'{i}-forward-to-stage-'
+                         f'{recv_stage.stage_rank}-input-'
                          f'{sending_to_input_index}'
                 )
+                if i > 0:
+                    merged_send_ops = CPPBackend.tf_lib().do_but_pass_by(
+                        send_op, merged_send_ops)
+                else:
+                    merged_send_ops = send_op
 
-            return x, grad
+            return CPPBackend.tf_lib().do_but_pass_by(x, merged_send_ops), grad
 
         return pipeline_output(inputs, self.__fake_kernel)

@@ -10,8 +10,6 @@ def main():
     from ddl.tensorflow.keras.parallelism.pipeline.stage import PipelineStage
     from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelineInput
 
-    tf.compat.v1.disable_eager_execution()
-
     class Stage0(PipelineStage):
         def __init__(self):
             super().__init__(output_num=2)
@@ -74,8 +72,6 @@ def main():
     data = MnistDistributedTrainData()
     label = MnistDistributedTrainLabel()
 
-    # 设置`experimental_run_tf_function=False` 让TensorFlow
-    # 使用opt计算梯度
     # noinspection PyTypeChecker
     model.compile(
         loss=tf.losses.SparseCategoricalCrossentropy(),

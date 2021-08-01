@@ -29,7 +29,10 @@ def formalize_shapes(shapes) -> Tuple[Tuple[int]]:
         for each_shape in shapes:
             element = []
             for each in each_shape:
-                element.append(int(each))
+                if each is None:
+                    element.append(0)
+                else:
+                    element.append(int(each))
             res.append(tuple(element))
     else:
         res.append((int(shapes),))

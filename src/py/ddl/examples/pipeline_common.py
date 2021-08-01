@@ -5,11 +5,35 @@ from ddl.message import Message
 import tensorflow as tf
 import pickle
 import numpy as np
+import random
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+
+parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--batch_size', type=int, default=1000)
+parser.add_argument('--micro_batch_size', type=int, default=100)
+parser.add_argument('--epochs', type=int, default=5)
+parser.add_argument('--in_graph_mode', action='store_true')
+
+arguments = parser.parse_args()
 
 world = Communicator.world()
-batch_size = 1000
-micro_batch_size = 100
-epochs = 5
+batch_size = arguments.batch_size
+micro_batch_size = arguments.micro_batch_size
+epochs = arguments.epochs
+seed = arguments.seed
+
+if arguments.in_graph_mode:
+    print('execute in graph')
+    tf.compat.v1.disable_eager_execution()
+else:
+    print('execute in eager')
+
+
+tf.random.set_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 
 
 class MnistDistributedTrainData(DistributedData):

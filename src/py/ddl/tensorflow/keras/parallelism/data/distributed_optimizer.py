@@ -21,9 +21,7 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
         self.communicator: Communicator = Communicator.world()
 
     def get_gradients(self, loss, params):
-        return self.__allreduce(
-            self.original_get_gradients(loss, params)
-        )
+        return self.__allreduce(self.original_get_gradients(loss, params))
 
     def _aggregate_gradients(self, grads_and_vars):
         grads, variables = list(zip(*grads_and_vars))
@@ -43,11 +41,14 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
         return results
 
     def __allreduce(self, grads):
+        if len(grads) == 0:
+            return grads
+        self.__gradients_allreduced = 'Allreduce' in grads[0].name
         if self.__gradients_allreduced:
             return grads
 
         def allreduce_grads():
-            with tf.name_scope(self.__name + "Allreduce"):
+            with tf.name_scope(self.__name + 'Allreduce'):
                 return [
                     tf.cond(
                         tf.convert_to_tensor(
@@ -63,7 +64,6 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
 
         if util.executing_eagerly():
             allreduce_grads = util.make_tf_function(allreduce_grads)
-
         self.__gradients_allreduced = True
         return allreduce_grads()
 

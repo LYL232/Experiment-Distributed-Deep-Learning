@@ -34,6 +34,16 @@ def intermediate_loss(grad, output):
     return tf.reduce_mean(tf.multiply(grad, output), axis=None)
 
 
+def zero_intermediate_loss(grad, output):
+    """
+    中间loss函数, 此函数只是为了引导tensorflow不要进行某些没有梯度的中间输出的剪枝
+    :@param grad: 从下一阶段后向传播得到的梯度
+    :@param output: 输出恒为0
+    :@return: 0
+    """
+    return tf.reduce_mean(tf.multiply(grad, output), axis=None) * 0
+
+
 class PipelineModel(Model):
     """
     流水线通用模型
@@ -175,7 +185,8 @@ class PipelineModel(Model):
 
         self._is_compiled = False
 
-        self.__session = backend.get_session()
+        self.__session = None if util.executing_eagerly() \
+            else backend.get_session()
 
         self.__micro_batch_controller = None
 
@@ -300,17 +311,29 @@ class PipelineModel(Model):
                     optimizer, self.__stage_comm
                 )
 
-            output_loss = []
-            metrics_list = []
-            for i in range(len(stage.output_pipes)):
-                output = stage.output_pipes[i]
-                if id(output) in self.__original_outputs_index.keys():
-                    index = self.__original_outputs_index[id(output)]
-                    output_loss.append(loss[index])
-                    metrics_list.append(metrics[index])
+            output_loss = {}
+            metrics_dict = {}
+            for i, pipe in enumerate(stage.output_pipes):
+                name = stage.model.output_names[i]
+                if id(pipe) in self.__original_outputs_index.keys():
+                    index = self.__original_outputs_index[id(pipe)]
+
+                    the_loss = loss[index]
+                    the_metric = metrics[index]
+
+                    if the_loss is None:
+                        the_loss = zero_intermediate_loss
+                        the_metric = zero_intermediate_loss
+
+                    output_loss[name] = the_loss
+                    metrics_dict[name] = the_metric
                 else:
-                    output_loss.append(intermediate_loss)
-                    metrics_list.append(intermediate_loss)
+                    if pipe.convey_gradient():
+                        output_loss[name] = intermediate_loss
+                        metrics_dict[name] = intermediate_loss
+                    else:
+                        output_loss[name] = zero_intermediate_loss
+                        metrics_dict[name] = [zero_intermediate_loss]
 
             self.__micro_batch_controller = MicroBatchController(
                 stage, optimizer, self.__session
@@ -319,7 +342,7 @@ class PipelineModel(Model):
             stage.model.compile(
                 optimizer=optimizer,
                 loss=output_loss,
-                metrics=metrics_list,
+                metrics=metrics_dict,
                 loss_weights=loss_weights,
                 sample_weight_mode=sample_weight_mode,
                 weighted_metrics=weighted_metrics,
@@ -599,12 +622,18 @@ class PipelineModel(Model):
             type_name = 'h5'
 
         model_path = f'stage-{stage_rank}-model.{type_name}'
-        with self.__session.graph.as_default():
-            with self.__session.as_default():
-                stage.model.save_weights(
-                    os.path.join(dir_path, model_path), overwrite=overwrite,
-                    save_format=save_format
-                )
+        if util.executing_eagerly():
+            stage.model.save_weights(
+                os.path.join(dir_path, model_path), overwrite=overwrite,
+                save_format=save_format
+            )
+        else:
+            with self.__session.graph.as_default():
+                with self.__session.as_default():
+                    stage.model.save_weights(
+                        os.path.join(dir_path, model_path), overwrite=overwrite,
+                        save_format=save_format
+                    )
 
     def load_weights(self, dir_path, by_name=False, skip_mismatch=False):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
