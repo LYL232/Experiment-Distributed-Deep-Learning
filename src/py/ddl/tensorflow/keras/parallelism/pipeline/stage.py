@@ -146,7 +146,10 @@ class PipelineStage(metaclass=ABCMeta):
         output_shape = []
         for each in model_output_shape:
             if len(each) > 1:
-                output_shape.append((*each[1:],))
+                if each[0] is None:
+                    output_shape.append((*each[1:],))
+                else:
+                    output_shape.append(each)
             else:
                 output_shape.append((1,))
 

@@ -10,6 +10,10 @@ def main():
         data_parallelism_distributed_optimizer_wrapper
     from ddl.tensorflow.keras.parallelism.data import \
         InitialParametersBroadcastCallBack
+    from ddl.tensorflow.keras.parallelism.data.lr_warm_up_callback import \
+        LearningRateWarmupCallback
+
+    base_lr = 0.001
 
     model = tf.keras.Sequential([
         Reshape(input_shape=(28, 28), target_shape=(28, 28, 1)),
@@ -35,13 +39,12 @@ def main():
     data = data[begin:end, ...] / 255.0
     label = label[begin:end, ...]
 
+    scaled_lr = world.size * base_lr
+
     optimizer = data_parallelism_distributed_optimizer_wrapper(
-        tf.optimizers.Adam(0.001)
+        tf.optimizers.Adam(scaled_lr)
     )
 
-    # 设置`experimental_run_tf_function=False` 让TensorFlow
-    # 使用opt计算梯度
-    # noinspection PyTypeChecker
     model.compile(
         loss=tf.losses.SparseCategoricalCrossentropy(),
         optimizer=optimizer,
@@ -53,6 +56,14 @@ def main():
         callbacks = [InitialParametersBroadcastCallBack(0)]
     else:
         callbacks = []
+
+    callbacks.append(
+        LearningRateWarmupCallback(
+            warmup_epochs=3, initial_lr=scaled_lr,
+            verbose=1,
+            communicator=world
+        )
+    )
 
     model.fit(
         x=data, y=label,

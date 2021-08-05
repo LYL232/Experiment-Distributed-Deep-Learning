@@ -1,6 +1,5 @@
 from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe
-from ddl.tensorflow.util import executing_eagerly
 from tensorflow.keras.layers import Layer
 import tensorflow as tf
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
@@ -53,7 +52,8 @@ class PipelineInputLayer(Layer):
                  f'stage-{self.__communicator.rank}-'
                  f'input-{self.__pipe.index_of(self.__stage)}-'
                  f'receive-forward-from-stage-'
-                 f'{self.__pipe.comes_from.stage_rank}'
+                 f'{self.__pipe.comes_from.stage_rank}-output-'
+                 f'{self.__pipe.index_of(self.__pipe.comes_from)}'
         )
 
         @tf.custom_gradient
@@ -114,9 +114,13 @@ class PipelineOutputLayer(Layer):
     def build(self, input_shape):
         if len(self.__pipe.send_to) > 0:
             self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
+        from ddl.log import info
+        info(f'{self.name} build input shape: {input_shape}')
         self.built = True
 
     def compute_output_shape(self, input_shape):
+        if input_shape[0] is not None:
+            return (None, *input_shape)
         return input_shape
 
     @tf.autograph.experimental.do_not_convert
@@ -130,10 +134,8 @@ class PipelineOutputLayer(Layer):
             return inputs
 
         if isinstance(inputs, ResourceVariable):
-            if not executing_eagerly():
-                raise TypeError(
-                    f'pipeline output not support type {type(inputs)} when'
-                    f'execute eagerly')
+            raise Exception('ResourceVariable '
+                            'can not be direct output of a stage')
 
         @tf.custom_gradient
         def pipeline_output(x, _):
@@ -153,23 +155,22 @@ class PipelineOutputLayer(Layer):
                         assert isinstance(recv_from_stage, PipelineStage)
                         recv_from_input_index = self.__pipe.index_of(
                             recv_from_stage)
-
-                        recv_grad_ops.append(
-                            CPPBackend.tf_lib().receive_tensor(
-                                dy,
-                                sender=recv_from_stage.stage_rank,
-                                tag=recv_from_input_index,
-                                name=f'pipeline-'
-                                     f'{self.__pipeline_model_rank}'
-                                     f'-stage-'
-                                     f'{self.__stage.stage_rank}-'
-                                     f'backward-gradient-from-stage-'
-                                     f'{recv_from_stage.stage_rank}-input-'
-                                     f'{recv_from_input_index}',
-                                # 这里要传入handle(整数值), 而不是一个python对象
-                                communicator_id=self.__communicator.id
-                            )
+                        recv_op = CPPBackend.tf_lib().receive_tensor(
+                            dy,
+                            sender=recv_from_stage.stage_rank,
+                            tag=recv_from_input_index,
+                            name=f'pipeline-'
+                                 f'{self.__pipeline_model_rank}'
+                                 f'-stage-'
+                                 f'{self.__stage.stage_rank}-'
+                                 f'backward-gradient-from-stage-'
+                                 f'{recv_from_stage.stage_rank}-input-'
+                                 f'{recv_from_input_index}',
+                            # 这里要传入handle(整数值), 而不是一个python对象
+                            communicator_id=self.__communicator.id
                         )
+
+                        recv_grad_ops.append(recv_op)
 
                     recv_grad = tf.add_n(recv_grad_ops)
                 else:
@@ -183,6 +184,9 @@ class PipelineOutputLayer(Layer):
 
             # 确保所有分支都会被计算到
             merged_send_ops = None
+
+            output_index = self.__pipe.index_of(self.__stage)
+
             for i, recv_stage in enumerate(self.__pipe.send_to):
                 sending_to_input_index = self.__pipe.index_of(recv_stage)
                 send_op = CPPBackend.tf_lib().forward_and_send(
@@ -192,10 +196,17 @@ class PipelineOutputLayer(Layer):
                     communicator_id=self.__communicator.id,
                     name=f'pipeline-{self.__pipeline_model_rank}-stage-'
                          f'{self.__stage.stage_rank}-output-'
-                         f'{i}-forward-to-stage-'
+                         f'{output_index}-forward-to-stage-'
                          f'{recv_stage.stage_rank}-input-'
                          f'{sending_to_input_index}'
                 )
+
+                with tf.control_dependencies([send_op]):
+                    tf.print(f'pipeline-{self.__pipeline_model_rank}-stage-'
+                             f'{self.__stage.stage_rank}-output-'
+                             f'{output_index}-forward-to-stage-'
+                             f'{recv_stage.stage_rank}-input-'
+                             f'{sending_to_input_index}')
                 if i > 0:
                     merged_send_ops = CPPBackend.tf_lib().do_but_pass_by(
                         send_op, merged_send_ops)

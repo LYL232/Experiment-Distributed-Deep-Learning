@@ -31,7 +31,10 @@ def intermediate_loss(grad, output):
     :@param output: 模型的输出
     :@return: loss
     """
-    return tf.reduce_mean(tf.multiply(grad, output), axis=None)
+    return tf.reduce_mean(
+        tf.multiply(grad, output), axis=None,
+        name='intermediate_loss'
+    )
 
 
 def zero_intermediate_loss(grad, output):
@@ -41,7 +44,12 @@ def zero_intermediate_loss(grad, output):
     :@param output: 输出恒为0
     :@return: 0
     """
-    return tf.reduce_mean(tf.multiply(grad, output), axis=None) * 0
+    # todo: 用passby来减少计算量
+    return tf.reduce_mean(
+        tf.multiply(grad, output),
+        name='zero_intermediate_loss',
+        axis=None
+    ) * 0
 
 
 class PipelineModel(Model):
