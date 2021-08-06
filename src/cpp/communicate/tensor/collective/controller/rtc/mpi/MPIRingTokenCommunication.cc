@@ -18,8 +18,10 @@ MPIRingTokenCommunication::MPIRingTokenCommunication(
           statusBuffer_(),
           sendBuffer_(nullptr), recvBuffer_(nullptr),
           collectiveCommunicateSendBuffer_(nullptr), collectiveCommunicateRecvBuffer_(nullptr),
+          allgatherSendBuffer_(nullptr), allgatherRecvBuffer_(nullptr),
           sendBufferSize_(0), recvBufferSize_(0),
           collectiveSendBufferSize_(0), collectiveReceiveBufferSize_(0),
+          allgatherSendBufferSize_(0), allgatherRecvBufferSize_(0),
           tokenMetaSize_(sizeof(Token::Type) + sizeof(Token::RequestType) + sizeof(size_t)),
           mpiCommunicator_(dynamic_cast<const MPICommunicator &>(*communicator_)) {}
 

@@ -25,6 +25,7 @@ void CommonTensorShape::appendShape(const CommonTensorShape &shape) {
 }
 
 size_t CommonTensorShape::dimSize(size_t idx) const {
+    // todo: 如果Tensor是一个没有形状的常量值，那么这里会引发错误
     assert(idx < shape_.size());
     return shape_[idx];
 }

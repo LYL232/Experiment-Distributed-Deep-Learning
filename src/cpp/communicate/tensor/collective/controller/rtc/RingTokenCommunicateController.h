@@ -48,6 +48,8 @@ private:
 
     // 用来记录每个通信域的控制器, 懒加载, 按需分配
     std::map<Communicator::ID, std::shared_ptr<RingTokenCommunicateHandler>> handlerMap_;
+    // 用来记录每个handler进入的顺序，因为handler不按创建的顺序释放会造成死锁
+    std::map<size_t, std::shared_ptr<RingTokenCommunicateHandler>> orderedByEnteringHandlerMap_;
     // 读写锁
     pthread_rwlock_t rwlock_;
 };
