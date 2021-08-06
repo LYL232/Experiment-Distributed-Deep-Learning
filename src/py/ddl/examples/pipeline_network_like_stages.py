@@ -75,6 +75,8 @@ def main():
     # noinspection PyTypeChecker
     model.compile(
         loss=tf.losses.SparseCategoricalCrossentropy(),
+        # PipelineModel会自动使用LearningRateWarmupCallback，所以这里不需要手动将
+        # 学习率乘上数据并行组数
         optimizer=tf.optimizers.Adam(0.001),
         metrics=['accuracy'],
         # 尝试进行数据并行
@@ -85,6 +87,8 @@ def main():
         x=data, y=label,
         batch_size=batch_size, micro_batch_size=micro_batch_size,
         epochs=epochs, verbose=1,
+        # PipelineModel会自动在callbacks里包装MetricAverageCallback和LearningRateWarmupCallback,
+        # 这里不需要手动添加
         callbacks=[
             ModelCheckpoint(
                 # todo: monitor
@@ -92,7 +96,9 @@ def main():
                 # 目前只支持只保存权重
                 save_weights_only=True,
             )
-        ]
+        ],
+        lr_warm_up_epochs=lr_warm_up_epochs,
+        lr_warm_up_verbose=1
     )
 
     model.save_weights('./network_like_stages_finished')
@@ -108,6 +114,6 @@ if __name__ == '__main__':
 
     from ddl.examples.pipeline_common import MnistDistributedTrainData, \
         MnistDistributedTrainLabel, evaluate, batch_size, micro_batch_size, \
-        epochs
+        epochs, lr_warm_up_epochs
 
     main()

@@ -12,7 +12,10 @@ def main():
         InitialParametersBroadcastCallBack
     from ddl.tensorflow.keras.parallelism.data.lr_warm_up_callback import \
         LearningRateWarmupCallback
+    from ddl.tensorflow.keras.parallelism.data.metric_average_callback import \
+        MetricAverageCallback
 
+    # 基础学习率
     base_lr = 0.001
 
     model = tf.keras.Sequential([
@@ -39,6 +42,7 @@ def main():
     data = data[begin:end, ...] / 255.0
     label = label[begin:end, ...]
 
+    # 将学习率乘上数据并行组数，然后在训练过程中学习率从略大于base_lr逐步warm up到这个值
     scaled_lr = world.size * base_lr
 
     optimizer = data_parallelism_distributed_optimizer_wrapper(
@@ -53,10 +57,11 @@ def main():
 
     if world.size > 1:
         # 统一初始权重, 由根节点广播
-        callbacks = [InitialParametersBroadcastCallBack(0)]
+        callbacks = [InitialParametersBroadcastCallBack(0, communicator=world)]
     else:
         callbacks = []
 
+    callbacks.append(MetricAverageCallback())
     callbacks.append(
         LearningRateWarmupCallback(
             warmup_epochs=3, initial_lr=scaled_lr,

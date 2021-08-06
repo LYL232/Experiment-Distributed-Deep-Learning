@@ -3,6 +3,8 @@ from ddl.message import Message
 from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
     MicroBatchController
 from ddl.tensorflow.util import executing_eagerly
+from ddl.tensorflow.keras.parallelism.data.metric_average_callback import \
+    MetricAverageCallback
 
 import json
 import tensorflow as tf
@@ -99,6 +101,15 @@ class PredictExecutor:
         return self.__session
 
     def run(self) -> np.ndarray or Tuple[np.ndarray]:
+
+        if self.__pipeline_communicator.rank == \
+                self.__pipeline_communicator.size - 1:
+            # 只有每条流水线的最后一个阶段才输出metric信息，所以只在流水线的最后一个进程
+            # 加入这个callback
+            self.__callbacks.append(
+                MetricAverageCallback(communicator=self.__stage_communicator),
+            )
+
         self.__callbacks.append(self.TrainingCallback(self))
 
         info(f'total micro batches: {self.__total_micro_batches}')

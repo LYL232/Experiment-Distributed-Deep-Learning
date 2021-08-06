@@ -114,8 +114,6 @@ class PipelineOutputLayer(Layer):
     def build(self, input_shape):
         if len(self.__pipe.send_to) > 0:
             self.__fake_kernel = self.add_weight(shape=(1,), trainable=True)
-        from ddl.log import info
-        info(f'{self.name} build input shape: {input_shape}')
         self.built = True
 
     def compute_output_shape(self, input_shape):
@@ -201,12 +199,6 @@ class PipelineOutputLayer(Layer):
                          f'{sending_to_input_index}'
                 )
 
-                with tf.control_dependencies([send_op]):
-                    tf.print(f'pipeline-{self.__pipeline_model_rank}-stage-'
-                             f'{self.__stage.stage_rank}-output-'
-                             f'{output_index}-forward-to-stage-'
-                             f'{recv_stage.stage_rank}-input-'
-                             f'{sending_to_input_index}')
                 if i > 0:
                     merged_send_ops = CPPBackend.tf_lib().do_but_pass_by(
                         send_op, merged_send_ops)

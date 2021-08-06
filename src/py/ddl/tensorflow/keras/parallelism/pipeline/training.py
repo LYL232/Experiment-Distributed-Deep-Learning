@@ -5,11 +5,16 @@ from ddl.tensorflow.keras.parallelism.data import \
 from ddl.tensorflow.util import executing_eagerly
 from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
     MicroBatchController
+from ddl.tensorflow.keras.parallelism.data.metric_average_callback import \
+    MetricAverageCallback
+from ddl.tensorflow.keras.parallelism.data.lr_warm_up_callback import \
+    LearningRateWarmupCallback
 
 import json
 import tensorflow as tf
 from tensorflow.python.keras.engine.training_v1 import Model as ModelV1
 from tensorflow.python.keras.engine.training import Model as ModelV2
+from tensorflow.python.keras import backend
 from tensorflow.keras.callbacks import History, Callback
 import numpy as np
 from collections.abc import Iterable
@@ -125,10 +130,8 @@ class TrainingExecutor:
                 InitialParametersBroadcastCallBack(
                     0, self.__stage_communicator)
             )
-        self.__callbacks.append(self.TrainingCallback(self))
 
-        info(f'total micro batches: {self.__total_micro_batches}')
-
+        lr_warm_up_verbose = self.__fit_args.pop('lr_warm_up_verbose', 1)
         if self.__pipeline_model_rank == 0 and \
                 self.__pipeline_communicator.rank == \
                 self.__pipeline_communicator.size - 1:
@@ -136,6 +139,35 @@ class TrainingExecutor:
             verbose = self.__verbose
         else:
             verbose = 0
+            lr_warm_up_verbose = 0
+
+        lr_warm_up = self.__fit_args.pop(
+            'lr_warm_up_epochs',
+            min(self.__epochs, 5)
+        )
+
+        base_lr = float(backend.get_value(self.stage.model.optimizer.lr))
+
+        if self.__pipeline_communicator.rank == \
+                self.__pipeline_communicator.size - 1:
+            # 只有每条流水线的最后一个阶段才输出metric信息，所以只在流水线的最后一个进程
+            # 加入这个callback
+            self.__callbacks.append(
+                MetricAverageCallback(communicator=self.__stage_communicator),
+            )
+
+        self.__callbacks.extend([
+            LearningRateWarmupCallback(
+                warmup_epochs=lr_warm_up,
+                communicator=self.__stage_communicator,
+                verbose=lr_warm_up_verbose,
+                initial_lr=base_lr * self.__stage_communicator.size
+            ),
+            self.TrainingCallback(self)
+        ])
+
+        info(f'total micro batches: {self.__total_micro_batches}')
+
         if executing_eagerly():
             history = self.stage.model.fit(
                 self.__fit_data_generator(),

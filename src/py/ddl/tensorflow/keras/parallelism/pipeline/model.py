@@ -375,6 +375,8 @@ class PipelineModel(Model):
             max_queue_size=10, workers=None,
             use_multiprocessing=False,
             micro_batch_size: int = None,
+            lr_warm_up_epochs: int = None,
+            lr_warm_up_verbose: int = 1,
             clear_session: bool = True
     ) -> History or list:
         """
@@ -400,6 +402,8 @@ class PipelineModel(Model):
         @param workers:
         @param use_multiprocessing:
         @param micro_batch_size: 微批次大小, 如果为None则代表不用微批次
+        @param lr_warm_up_epochs: 学习率由基础值0调整至设定值 * 数据并行组的epochs数
+        @param lr_warm_up_verbose: 学习率调整是否可在epochs完成时可见，1为可见，0为不可见
         @param clear_session: 是否在训练结束后清除执行会话
         @return: Model.fit(...), 如果本进程不工作, 则None
         """
@@ -517,7 +521,9 @@ class PipelineModel(Model):
             # 不允许使用worker参数, tensorflow 多线程调用session会出问题
             # 'workers': workers,
             'use_multiprocessing': use_multiprocessing,
-            'verbose': verbose
+            'verbose': verbose,
+            'lr_warm_up_verbose': lr_warm_up_verbose,
+            'lr_warm_up_epochs': lr_warm_up_epochs,
         }
 
         res = TrainingExecutor(
