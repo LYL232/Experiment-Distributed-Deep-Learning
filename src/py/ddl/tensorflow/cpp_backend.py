@@ -29,6 +29,13 @@ class CPPBackend:
 
     @classmethod
     def __initialize(cls, path_to_lib: str = None):
+        if path_to_lib is None:
+            try:
+                from ddl.log import info
+                path_to_lib = os.environ['ddl_lib']
+                info(f'found ddl_lib path: {path_to_lib}')
+            except KeyError:
+                pass
         if path_to_lib is not None:
             cls.__path_to_lib = path_to_lib
         # tf_lib 必须先于c_api加载, 否则tensorflow会找不到op
