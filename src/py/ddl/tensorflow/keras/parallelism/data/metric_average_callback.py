@@ -53,4 +53,6 @@ class MetricAverageCallback(Callback):
             logs[metric] = value / self.__communicator.size
 
     def on_epoch_end(self, epoch, logs=None):
-        self._average_metrics_in_place(logs)
+        if self.__communicator.size > 1:
+            # 仅在需要通信域大小大于1时进行平均运算
+            self._average_metrics_in_place(logs)

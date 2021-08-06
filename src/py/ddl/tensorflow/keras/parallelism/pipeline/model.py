@@ -375,7 +375,7 @@ class PipelineModel(Model):
             max_queue_size=10, workers=None,
             use_multiprocessing=False,
             micro_batch_size: int = None,
-            lr_warm_up_epochs: int = None,
+            lr_warm_up_epochs: int = 5,
             lr_warm_up_verbose: int = 1,
             clear_session: bool = True
     ) -> History or list:
@@ -523,7 +523,7 @@ class PipelineModel(Model):
             'use_multiprocessing': use_multiprocessing,
             'verbose': verbose,
             'lr_warm_up_verbose': lr_warm_up_verbose,
-            'lr_warm_up_epochs': lr_warm_up_epochs,
+            'lr_warm_up_epochs': min(epochs, lr_warm_up_epochs),
         }
 
         res = TrainingExecutor(
