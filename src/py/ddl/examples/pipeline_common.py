@@ -26,13 +26,11 @@ epochs = arguments.epochs
 seed = arguments.seed
 lr_warm_up_epochs = arguments.lr_warm_up_epochs
 
-
 if arguments.in_graph_mode:
     print('execute in graph')
     tf.compat.v1.disable_eager_execution()
 else:
     print('execute in eager')
-
 
 tf.random.set_seed(seed)
 np.random.seed(seed)
@@ -41,7 +39,7 @@ random.seed(seed)
 
 class MnistDistributedTrainData(DistributedData):
     def __init__(self):
-        super().__init__(60000, (28, 28), world)
+        super().__init__((28, 28), world)
         self.__data = None
 
     def get(self, begin: int, end: int = None, step: int = None):
@@ -52,11 +50,12 @@ class MnistDistributedTrainData(DistributedData):
         (self.__data, _), _ = \
             tf.keras.datasets.mnist.load_data(path='original-mnist.npz')
         self.__data = self.__data / 255.0
+        return len(self.__data)
 
 
 class MnistDistributedTrainLabel(DistributedData):
     def __init__(self):
-        super().__init__(60000, tuple(), world)
+        super().__init__(tuple(), world)
         self.__data = None
 
     def get(self, begin: int, end: int = None, step: int = None):
@@ -66,11 +65,12 @@ class MnistDistributedTrainLabel(DistributedData):
     def _initialize_data(self):
         (_, self.__data), _ = \
             tf.keras.datasets.mnist.load_data(path='original-mnist.npz')
+        return len(self.__data)
 
 
 class MnistDistributedTestData(DistributedData):
     def __init__(self):
-        super().__init__(10000, (28, 28), world)
+        super().__init__((28, 28), world)
         self.__data = None
 
     def get(self, begin: int, end: int = None, step: int = None):
@@ -81,6 +81,7 @@ class MnistDistributedTestData(DistributedData):
         _, (self.__data, _) = \
             tf.keras.datasets.mnist.load_data(path='original-mnist.npz')
         self.__data = self.__data / 255.0
+        return len(self.__data)
 
 
 def evaluate(model: PipelineModel):
