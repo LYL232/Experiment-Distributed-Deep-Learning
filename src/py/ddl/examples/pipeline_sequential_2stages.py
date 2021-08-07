@@ -47,8 +47,8 @@ def main():
 
     model = PipelineSequentialModel([Stage0(), Stage1()], input_shape=(28, 28))
 
-    data = MnistDistributedTrainData()
-    label = MnistDistributedTrainLabel()
+    data = MnistDistributedData(test=False, label=False)
+    label = MnistDistributedData(test=False, label=True)
 
     # noinspection PyTypeChecker
     model.compile(
@@ -90,8 +90,8 @@ if __name__ == '__main__':
 
     sys.path.append(abspath(join(__file__, '../../../')))
 
-    from ddl.examples.pipeline_common import MnistDistributedTrainData, \
-        MnistDistributedTrainLabel, evaluate, batch_size, micro_batch_size, \
+    from ddl.examples.pipeline_common import MnistDistributedData, \
+        evaluate, batch_size, micro_batch_size, \
         epochs, lr_warm_up_epochs
 
     main()
