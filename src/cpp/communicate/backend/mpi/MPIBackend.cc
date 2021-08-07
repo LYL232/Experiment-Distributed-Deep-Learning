@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <iostream>
 #include "global/Global.h"
+#include "global/initialize.h"
 #include "communicate/backend/mpi/MPIBackend.h"
 #include "communicate/backend/mpi/MPICommunicator.h"
 
@@ -75,6 +76,7 @@ std::shared_ptr<Communicator> MPIBackend::worldGetter_(int *argc, char ***argv) 
 
 void MPIBackend::initialize_(int *argc, char ***argv) {
     int provided, required = MPI_THREAD_MULTIPLE;
+    std::cerr << "MPI initializing" << std::endl;
     MPI_Init_thread(argc, argv, required, &provided);
     if (provided < required) {
         std::cerr << "ERROR: environment dose not provide mpi thread requirement" << std::endl;
@@ -86,6 +88,7 @@ void MPIBackend::initialize_(int *argc, char ***argv) {
     int rank, size;
     MPI_Comm_rank(*copiedWorld, &rank);
     MPI_Comm_size(*copiedWorld, &size);
+    std::cerr << "MPI initialized world rank: " << rank << ", size: " << size << std::endl;
     world_.reset(new MPICommunicator(  // no mem track
             std::shared_ptr<MPI_Comm>(copiedWorld),
             rank, size
