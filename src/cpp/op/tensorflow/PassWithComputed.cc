@@ -2,28 +2,27 @@
 // Created by LYL232 on 2021/6/19.
 //
 
-#include "op/tensorflow/DoButPassByOp.h"
+#include "op/tensorflow/PassWithComputed.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
 using namespace tensorflow;
 
-REGISTER_OP("DoButPassBy")
-        .Attr("T: {int32, int64, float32, float64}")
-        .Input("forward: T")
-        .Input("do: T")
-        .Output("forwarded: T")
+REGISTER_OP("PassWithComputed")
+        .Input("to_pass: T")
+        .Input("to_do_ops: N * T")
+        .Output("passed: T")
+        .Attr("N: int >= 1")
+        .Attr("T: numbertype")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
             return tensorflow::Status::OK();
         });
 
-DoButPassByOp::DoButPassByOp(tensorflow::OpKernelConstruction *context) : OpKernel(context) {
+PassWithComputed::PassWithComputed(tensorflow::OpKernelConstruction *context) : OpKernel(context) {}
 
-}
-
-void DoButPassByOp::Compute(tensorflow::OpKernelContext *context) {
+void PassWithComputed::Compute(tensorflow::OpKernelContext *context) {
     // 仅仅是转发tensor
     const Tensor &forward = context->input(0);
     if (context->input_is_ref(0)) {
@@ -33,6 +32,6 @@ void DoButPassByOp::Compute(tensorflow::OpKernelContext *context) {
     }
 }
 
-REGISTER_KERNEL_BUILDER(Name("DoButPassBy").Device(DEVICE_CPU), DoButPassByOp)
+REGISTER_KERNEL_BUILDER(Name("PassWithComputed").Device(DEVICE_CPU), PassWithComputed)
 
 }}}

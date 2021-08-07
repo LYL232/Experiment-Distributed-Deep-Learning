@@ -10,9 +10,9 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class DoButPassByOp: public tensorflow::OpKernel {
+class PassWithComputed: public tensorflow::OpKernel {
 public:
-    explicit DoButPassByOp(tensorflow::OpKernelConstruction *context);
+    explicit PassWithComputed(tensorflow::OpKernelConstruction *context);
 
     void Compute(tensorflow::OpKernelContext *context) override;
 };

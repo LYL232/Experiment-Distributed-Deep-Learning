@@ -173,15 +173,15 @@ class PipelineOutputLayer(Layer):
                     recv_grad = tf.add_n(recv_grad_ops)
                 else:
                     recv_grad = tf.zeros_like(dy)
-                # 为了欺骗tensorflow这里有梯度需要计算, 如果不加这一句那么如果之前的层
-                # 不需要recv_grad
-                fake_grad = CPPBackend.tf_lib().do_but_pass_by(
-                    tf.zeros((1,)), recv_grad
+                # 为了欺骗tensorflow这里有梯度需要计算, 如果不加这一句直接返回tf.zeros,
+                # 那么recv_grad不会被调用
+                fake_grad = CPPBackend.tf_lib().pass_with_computed(
+                    tf.zeros((1,)), [recv_grad]
                 )
                 return recv_grad, fake_grad
 
             # 确保所有分支都会被计算到
-            merged_send_ops = None
+            send_ops = []
 
             output_index = self.__pipe.index_of(self.__stage)
 
@@ -199,12 +199,8 @@ class PipelineOutputLayer(Layer):
                          f'{sending_to_input_index}'
                 )
 
-                if i > 0:
-                    merged_send_ops = CPPBackend.tf_lib().do_but_pass_by(
-                        send_op, merged_send_ops)
-                else:
-                    merged_send_ops = send_op
+                send_ops.append(send_op)
 
-            return CPPBackend.tf_lib().do_but_pass_by(x, merged_send_ops), grad
+            return CPPBackend.tf_lib().pass_with_computed(x, send_ops), grad
 
         return pipeline_output(inputs, self.__fake_kernel)
