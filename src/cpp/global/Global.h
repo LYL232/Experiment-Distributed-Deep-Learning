@@ -121,7 +121,7 @@ private:
 #define SEC_TIME_LOG(s) GLOBAL_INFO("[TIME-" << \
     std::chrono::duration_cast<std::chrono::seconds>( \
         std::chrono::system_clock::now().time_since_epoch()).count() \
-        << "]: " << (s))
+        << "]: " << s)
 
 #define MS_TIME_LOG(s) GLOBAL_INFO("[TIME-" << \
     std::chrono::duration_cast<std::chrono::milliseconds>( \

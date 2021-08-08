@@ -37,6 +37,9 @@ SendTensorOp::SendTensorOp(tensorflow::OpKernelConstruction *context) :
 void SendTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace std;
     const Tensor &sendingTensor = context->input(0);
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
+    MS_TIME_LOG("SendTensorOp begin:" << name())
+#endif
 
     // 仅仅是转发tensor
     if (context->input_is_ref(0)) {

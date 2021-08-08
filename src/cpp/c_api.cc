@@ -52,6 +52,22 @@ void detach_communicator(Communicator::ID id) {
     Global::get().detachCommunicator(id);
 }
 
+void py_sec_time_log(const char *logStr) {
+    SEC_TIME_LOG("[py]: " << logStr)
+}
+
+void py_ms_time_log(const char *logStr) {
+    MS_TIME_LOG("[py]: " << logStr)
+}
+
+void py_us_time_log(const char *logStr) {
+    US_TIME_LOG("[py]: " << logStr)
+}
+
+void py_ns_time_log(const char *logStr) {
+    NS_TIME_LOG("[py]: " << logStr)
+}
+
 void py_info(const char *logStr) {
     GLOBAL_INFO_WITH_THREAD_ID("[py]: " << logStr)
 }

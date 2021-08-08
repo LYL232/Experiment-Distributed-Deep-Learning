@@ -13,7 +13,7 @@ namespace lyl232 { namespace experiment { namespace ddl {
 
 class ReceiveTensorOp : public tensorflow::AsyncOpKernel {
 public:
-    explicit ReceiveTensorOp(tensorflow::OpKernelConstruction *context);
+    __attribute__((unused)) explicit ReceiveTensorOp(tensorflow::OpKernelConstruction *context);
 
     void ComputeAsync(tensorflow::OpKernelContext *context, DoneCallback done) override;
 

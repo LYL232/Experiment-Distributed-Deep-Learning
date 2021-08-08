@@ -34,6 +34,10 @@ ReceiveTensorOp::ReceiveTensorOp(tensorflow::OpKernelConstruction *context) :
 
 void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace std;
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
+    MS_TIME_LOG("ReceiveTensorOp begin:" << name())
+#endif
+
     const Tensor &input = context->input(0);
 
     auto &global = Global::get();

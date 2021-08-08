@@ -32,6 +32,9 @@ AllreduceOp::AllreduceOp(tensorflow::OpKernelConstruction *context) :
 void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace lyl232::experiment::ddl;
     using namespace std;
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
+    MS_TIME_LOG("AllreduceOp begin:" << name())
+#endif
     // 获取输入 tensor
     const Tensor &input = context->input(0);
     // 创建输出 tensor, context->allocate_output 用来分配输出内存

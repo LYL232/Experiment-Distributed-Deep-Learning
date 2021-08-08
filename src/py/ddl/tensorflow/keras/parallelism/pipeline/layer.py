@@ -1,5 +1,6 @@
 from ddl.tensorflow.cpp_backend import CPPBackend
 from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe
+from ddl.log import LOG_CONFIG_PIPELINE_IO_GRAD_LOG
 from tensorflow.keras.layers import Layer
 import tensorflow as tf
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
@@ -40,6 +41,12 @@ class PipelineInputLayer(Layer):
     def call(self, inputs, **kwargs):
         assert self.__communicator is not None
 
+        if LOG_CONFIG_PIPELINE_IO_GRAD_LOG:
+            inputs = CPPBackend.tf_lib().time_log(
+                inputs,
+                name=f'pipeline-input-{self.__pipe.index_of(self.__stage)}'
+            )
+
         if self.__pipe.comes_from is None:
             return inputs
 
@@ -67,6 +74,12 @@ class PipelineInputLayer(Layer):
             """
 
             def grad(dy):
+                if LOG_CONFIG_PIPELINE_IO_GRAD_LOG:
+                    dy = CPPBackend.tf_lib().time_log(
+                        dy,
+                        name=f'pipeline-input-'
+                             f'{self.__pipe.index_of(self.__stage)}-grad'
+                    )
                 if self.__convey_gradient:
                     send_op = CPPBackend.tf_lib().send_tensor(
                         dy,
@@ -151,6 +164,13 @@ class PipelineOutputLayer(Layer):
 
             # 定义后向传播图
             def grad(dy):
+                if LOG_CONFIG_PIPELINE_IO_GRAD_LOG:
+                    dy = CPPBackend.tf_lib().time_log(
+                        dy,
+                        name=f'pipeline-output-'
+                             f'{self.__pipe.index_of(self.__stage)}-grad'
+                    )
+
                 if self.__convey_gradient:
                     recv_grad_ops = []
                     dy = tf.zeros_like(dy)
@@ -206,5 +226,11 @@ class PipelineOutputLayer(Layer):
                 send_ops.append(send_op)
 
             return CPPBackend.tf_lib().pass_with_computed(x, send_ops), grad
+
+        if LOG_CONFIG_PIPELINE_IO_GRAD_LOG:
+            inputs = CPPBackend.tf_lib().time_log(
+                inputs,
+                name=f'pipeline-output-{self.__pipe.index_of(self.__stage)}'
+            )
 
         return pipeline_output(inputs, self.__fake_kernel)

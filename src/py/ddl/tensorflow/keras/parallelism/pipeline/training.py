@@ -1,4 +1,4 @@
-from ddl.log import info
+from ddl.log import info, time_log, TimeUnit
 from ddl.message import Message
 from ddl.tensorflow.keras.parallelism.data import \
     InitialParametersBroadcastCallBack
@@ -33,6 +33,7 @@ class TrainingExecutor:
         def on_train_batch_end(self, batch, logs=None):
             # 通知模型已经张量已经传输完毕, 或许可以通过op和C api进行通知, 但是有点复杂
             self.__executor.on_micro_batch_end(batch)
+            time_log(f'batch {batch} end', TimeUnit.MS)
 
     def __init__(
             self, stage, micro_batch_controller: MicroBatchController,
@@ -341,9 +342,10 @@ class TrainingExecutor:
 
             # 进行后向传播
             for i in range(len(self.__micro_batch_inputs)):
-                info(f'back propagation micro batch['
-                     f'{micro_batch_segments[i][0]},'
-                     f' {micro_batch_segments[i][1]}]')
+                time_log(f'back propagation micro batch['
+                         f'{micro_batch_segments[i][0]},'
+                         f' {micro_batch_segments[i][1]}]',
+                         TimeUnit.MS)
                 targets = self.__get_micro_batch_targets(
                     *micro_batch_segments[i])
                 yield self.__micro_batch_inputs[i], targets

@@ -91,3 +91,8 @@ class CPPBackend:
         if not cls.__initialized:
             cls.__initialize()
         return cls.__tf_lib
+
+
+@tf.RegisterGradient('TimeLog')
+def time_log(_unused_op, grad):
+    return grad

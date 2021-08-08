@@ -34,6 +34,14 @@ Communicator::ID split_communicator(Communicator::ID communicatorId, int color, 
 
 void detach_communicator(Communicator::ID communicatorId);
 
+void py_sec_time_log(const char *logStr);
+
+void py_ms_time_log(const char *logStr);
+
+void py_us_time_log(const char *logStr);
+
+void py_ns_time_log(const char *logStr);
+
 void py_info(const char *logStr);
 
 void py_debug(const char *logStr);

@@ -34,6 +34,10 @@ BroadcastOp::BroadcastOp(tensorflow::OpKernelConstruction *context) :
 void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace lyl232::experiment::ddl;
     using namespace std;
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
+    MS_TIME_LOG("BroadcastOp begin:" << name())
+#endif
+
     // 获取输入 tensor
     const Tensor &input = context->input(0);
     Tensor *output = nullptr;
