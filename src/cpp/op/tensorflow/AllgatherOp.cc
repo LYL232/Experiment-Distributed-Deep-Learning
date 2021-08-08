@@ -46,8 +46,11 @@ void AllgatherOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
                             std::make_shared<TensorflowTensor>(input),
                             // allgather并不能在此申请输出张量的内存, 所以放在通信时申请
                             std::shared_ptr<TensorflowTensor>(),
-                            [context, done](StatusCode code) {
+                            [this, context, done](StatusCode code) {
                                 context->SetStatus(statusCode2TFStatus(code));
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
+                                MS_TIME_LOG("ReceiveTensorOp done:" << name())
+#endif
                                 done();
                             },
                             global.getCommunicator(communicatorId_),

@@ -7,6 +7,7 @@
 
 #include <pthread.h>
 #include <thread>
+#include <chrono>
 #include "global/GlobalLog.h"
 #include "global/HeapMemoryManager.h"
 #include "communicate/backend/Communicator.h"
@@ -88,7 +89,7 @@ private:
 };
 
 #define STREAM_WITH_THREAD_ID(s) \
-    "[" << std::this_thread::get_id() << "]: " << s
+    "[" << std::this_thread::get_id() << "]" << s
 
 #define GLOBAL_INFO(s) { \
         auto &stream = Global::log->thisThreadLogStream(); \
@@ -116,6 +117,27 @@ private:
 
 #define GLOBAL_ERROR_WITH_THREAD_ID(s) \
     GLOBAL_ERROR(STREAM_WITH_THREAD_ID(s))
+
+#define SEC_TIME_LOG(s) GLOBAL_INFO("[TIME-" << \
+    std::chrono::duration_cast<std::chrono::seconds>( \
+        std::chrono::system_clock::now().time_since_epoch()).count() \
+        << "]: " << (s))
+
+#define MS_TIME_LOG(s) GLOBAL_INFO("[TIME-" << \
+    std::chrono::duration_cast<std::chrono::milliseconds>( \
+        std::chrono::system_clock::now().time_since_epoch()).count() \
+        << "]: " << s)
+
+#define US_TIME_LOG(s) GLOBAL_INFO("[TIME-" << \
+    std::chrono::duration_cast<std::chrono::microseconds>( \
+        std::chrono::system_clock::now().time_since_epoch()).count() \
+        << "]: " << s)
+
+#define NS_TIME_LOG(s) GLOBAL_INFO("[TIME-" << \
+    std::chrono::duration_cast<std::chrono::nanoseconds>( \
+        std::chrono::system_clock::now().time_since_epoch()).count() \
+        << "]: " << s)
+
 }}}
 
 

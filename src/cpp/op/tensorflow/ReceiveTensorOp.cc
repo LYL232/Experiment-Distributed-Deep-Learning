@@ -50,8 +50,11 @@ void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) 
                     global.end2EndCommunicateController(),
                     name(),
                     make_shared<TensorflowTensor>(input),
-                    [context, done](StatusCode code) {
+                    [this, context, done](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
+                        MS_TIME_LOG("ReceiveTensorOp done:" << name())
+#endif
                         done();
                     },
                     sender_, global.getCommunicator(communicatorId_),

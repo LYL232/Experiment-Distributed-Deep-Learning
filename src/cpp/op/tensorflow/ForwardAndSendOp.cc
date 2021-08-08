@@ -55,8 +55,11 @@ void ForwardAndSendOp::ComputeAsync(OpKernelContext *context, DoneCallback done)
                     global.end2EndCommunicateController(),
                     name(),
                     std::make_shared<TensorflowTensor>(sendingTensor),
-                    [context, done](StatusCode code) {
+                    [this, context, done](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
+                        MS_TIME_LOG("ForwardAndSendOp done:" << name())
+#endif
                         done();
                     },
                     receiver_, commPtr,

@@ -50,8 +50,11 @@ void AllreduceOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
                             name(),
                             std::make_shared<TensorflowTensor>(input),
                             std::make_shared<TensorflowTensor>(*output),
-                            [context, done](StatusCode code) {
+                            [this, context, done](StatusCode code) {
                                 context->SetStatus(statusCode2TFStatus(code));
+#if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
+                                MS_TIME_LOG("AllreduceOp done:" << name())
+#endif
                                 done();
                             },
                             TensorAllreduceRequest::Operation::ALLREDUCE_OP_SUM,
