@@ -68,8 +68,8 @@ class PipelineInputLayer(Layer):
 
             def grad(dy):
                 if self.__convey_gradient:
-                    fake_grad = CPPBackend.tf_lib().forward_and_send(
-                        tf.zeros((1,)), dy,
+                    send_op = CPPBackend.tf_lib().send_tensor(
+                        dy,
                         receiver=self.__pipe.comes_from.stage_rank,
                         tag=self.__pipe.index_of(self.__stage),
                         communicator_id=self.__communicator.id,
@@ -77,6 +77,11 @@ class PipelineInputLayer(Layer):
                              f'{self.__pipe.comes_from.stage_rank}'
                              f'-pipeline-input-'
                              f'{self.__pipe.index_of(self.__pipe.comes_from)}'
+                    )
+                    # 如果不pass_with_computed会导致
+                    # send_op没有终点而被tf认为无用而剪掉分支
+                    fake_grad = CPPBackend.tf_lib().pass_with_computed(
+                        tf.zeros((1,)), [send_op]
                     )
                 else:
                     fake_grad = tf.reshape(
@@ -187,8 +192,8 @@ class PipelineOutputLayer(Layer):
 
             for i, recv_stage in enumerate(self.__pipe.send_to):
                 sending_to_input_index = self.__pipe.index_of(recv_stage)
-                send_op = CPPBackend.tf_lib().forward_and_send(
-                    x, x,
+                send_op = CPPBackend.tf_lib().send_tensor(
+                    x,
                     receiver=recv_stage.stage_rank,
                     tag=sending_to_input_index,
                     communicator_id=self.__communicator.id,
@@ -198,7 +203,6 @@ class PipelineOutputLayer(Layer):
                          f'{recv_stage.stage_rank}-input-'
                          f'{sending_to_input_index}'
                 )
-
                 send_ops.append(send_op)
 
             return CPPBackend.tf_lib().pass_with_computed(x, send_ops), grad

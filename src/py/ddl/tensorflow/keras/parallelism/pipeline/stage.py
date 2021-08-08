@@ -248,8 +248,8 @@ class PipelineStage(metaclass=ABCMeta):
                 while j >= len(output_layer_send_ops[i]):
                     send_ops.append(j)
                 with control_dependencies(last_stage_send_ops):
-                    send_op = CPPBackend.tf_lib().forward_and_send(
-                        output, output,
+                    send_op = CPPBackend.tf_lib().send_tensor(
+                        output,
                         receiver=recv_stage.stage_rank,
                         tag=sending_to_input_index,
                         communicator_id=communicator.id,

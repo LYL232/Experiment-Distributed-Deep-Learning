@@ -10,9 +10,9 @@
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class ForwardAndSendOp : public tensorflow::AsyncOpKernel {
+class SendTensorOp : public tensorflow::AsyncOpKernel {
 public:
-    explicit ForwardAndSendOp(tensorflow::OpKernelConstruction *context);
+    explicit SendTensorOp(tensorflow::OpKernelConstruction *context);
 
     void ComputeAsync(tensorflow::OpKernelContext *context, DoneCallback done) override;
 
