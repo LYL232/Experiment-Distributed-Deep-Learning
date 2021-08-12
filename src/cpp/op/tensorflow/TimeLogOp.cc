@@ -14,7 +14,8 @@ namespace lyl232 { namespace experiment { namespace ddl {
 using namespace tensorflow;
 
 REGISTER_OP("TimeLog")
-        .Attr("T: {int32, int64, float32, float64}")
+        .Attr("T: numbertype")
+        .Attr("key: string = ''")
         .Input("pass: T")
         .Output("passed: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
@@ -22,7 +23,9 @@ REGISTER_OP("TimeLog")
             return tensorflow::Status::OK();
         });
 
-TimeLogOp::TimeLogOp(tensorflow::OpKernelConstruction *context) : OpKernel(context) {}
+TimeLogOp::TimeLogOp(tensorflow::OpKernelConstruction *context) : OpKernelWithKey(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("key", &key_));
+}
 
 void TimeLogOp::Compute(OpKernelContext *context) {
     using namespace std;
@@ -33,7 +36,7 @@ void TimeLogOp::Compute(OpKernelContext *context) {
     } else {
         context->set_output(0, sendingTensor);
     }
-    MS_TIME_LOG("[TIME-LOG]: " << name())
+    MS_TIME_LOG("[TIME-LOG]: " << key())
 }
 
 REGISTER_KERNEL_BUILDER(Name("TimeLog").Device(DEVICE_CPU), TimeLogOp)

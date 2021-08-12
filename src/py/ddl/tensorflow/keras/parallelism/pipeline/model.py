@@ -4,37 +4,26 @@ from ddl.tensorflow.keras.parallelism.data import \
     data_parallelism_distributed_optimizer_wrapper
 from ddl.tensorflow.keras.parallelism.pipeline.pipe import PipelinePipe, \
     PipelineInput
-from ddl.tensorflow.keras.parallelism.pipeline.training import \
-    TrainingExecutor
-from ddl.tensorflow.keras.parallelism.pipeline.predict import \
-    PredictExecutor
-from ddl.tensorflow.keras.parallelism.pipeline.micro_batch_controller import \
-    MicroBatchController
+from ddl.tensorflow.keras.parallelism.data.metric_average_callback import \
+    MetricAverageCallback
+from ddl.tensorflow.keras.parallelism.data import \
+    InitialParametersBroadcastCallBack
+from ddl.tensorflow.keras.parallelism.data.lr_warm_up_callback import \
+    LearningRateWarmupCallback
 from ddl.tensorflow import util
+from ddl.log import Log, TimeUnit
+from ddl.message import Message
 
+import json
 from sys import stderr
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Optimizer
-from tensorflow.keras.callbacks import History, ModelCheckpoint
+from tensorflow.keras.callbacks import History, ModelCheckpoint, Callback
 from tensorflow.python.keras import backend
 import tensorflow as tf
 import numpy as np
 from typing import Tuple
 import os
-
-
-def intermediate_loss(grad, output):
-    """
-    中间loss函数, 此函数的训练效果理论上与原模型的训练效果一致,
-    其实就是偏差与输出的Hadamard积, 即按对应元素相乘
-    :@param grad: 从下一阶段后向传播得到的梯度
-    :@param output: 模型的输出
-    :@return: loss
-    """
-    return tf.reduce_mean(
-        tf.multiply(grad, output), axis=None,
-        name='intermediate_loss'
-    )
 
 
 def zero_intermediate_loss(grad, output):
@@ -50,6 +39,20 @@ def zero_intermediate_loss(grad, output):
         name='zero_intermediate_loss',
         axis=None
     ) * 0
+
+
+class TrainingTimePointLogCallback(Callback):
+    """
+    后向传播结束回调函数
+    """
+
+    def on_train_batch_end(self, batch, logs=None):
+        # 通知模型已经张量已经传输完毕, 或许可以通过op和C api进行通知, 但是有点复杂
+        self.__executor.on_micro_batch_end(batch)
+        Log.time_log(f'micro batch {batch} end', TimeUnit.MS)
+
+    def on_epoch_end(self, epoch, logs=None):
+        Log.time_log(f'epoch {epoch} end', TimeUnit.MS)
 
 
 class PipelineModel(Model):
@@ -196,7 +199,8 @@ class PipelineModel(Model):
         self.__session = None if util.executing_eagerly() \
             else backend.get_session()
 
-        self.__micro_batch_controller = None
+        self.__pipeline_inputs_data_indexes = []
+        self.__pipeline_targets_data_indexes = []
 
     @property
     def processes_require(self) -> int:
@@ -306,21 +310,18 @@ class PipelineModel(Model):
 
         if self.__work:
             stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
+
+            is_output_stage = False
+            for pipe in stage.output_pipes:
+                if id(pipe) in self.__original_outputs_index.keys():
+                    is_output_stage = True
+                    break
             # 加载本阶段模型
-            stage.build()
-            # 进行数据并行, 分割stage通信域
-            self.__stage_comm = \
-                self.__model_comm.split_communicator(
-                    self.__pipeline_comm.rank, self.__pipeline_model_rank
-                )
-            if try_data_parallelism:
-                # 获取数据并行分布式优化器
-                optimizer = data_parallelism_distributed_optimizer_wrapper(
-                    optimizer, self.__stage_comm
-                )
+            stage.build(is_output_stage)
 
             output_loss = {}
             metrics_dict = {}
+
             for i, pipe in enumerate(stage.output_pipes):
                 name = stage.model.output_names[i]
                 if id(pipe) in self.__original_outputs_index.keys():
@@ -335,17 +336,29 @@ class PipelineModel(Model):
 
                     output_loss[name] = the_loss
                     metrics_dict[name] = the_metric
-                else:
-                    if pipe.convey_gradient():
-                        output_loss[name] = intermediate_loss
-                        metrics_dict[name] = intermediate_loss
-                    else:
-                        output_loss[name] = zero_intermediate_loss
-                        metrics_dict[name] = [zero_intermediate_loss]
 
-            self.__micro_batch_controller = MicroBatchController(
-                stage, optimizer, self.__session
-            )
+            # 进行数据并行, 分割stage通信域
+            self.__stage_comm = \
+                self.__model_comm.split_communicator(
+                    self.__pipeline_comm.rank, self.__pipeline_model_rank
+                )
+            if try_data_parallelism:
+                # 获取数据并行分布式优化器
+                optimizer = data_parallelism_distributed_optimizer_wrapper(
+                    optimizer, self.__stage_comm
+                )
+
+            for pipes, data_indexes, original_index in [
+                (stage.input_pipes, self.__pipeline_inputs_data_indexes,
+                 self.__original_inputs_index),
+                (stage.output_pipes, self.__pipeline_targets_data_indexes,
+                 self.__original_outputs_index)
+            ]:
+                for each in pipes:
+                    if id(each) in original_index.keys():
+                        data_indexes.append(original_index[id(each)])
+                    else:
+                        data_indexes.append(None)
 
             stage.model.compile(
                 optimizer=optimizer,
@@ -376,8 +389,7 @@ class PipelineModel(Model):
             use_multiprocessing=False,
             micro_batch_size: int = None,
             lr_warm_up_epochs: int = 5,
-            lr_warm_up_verbose: int = 1,
-            clear_session: bool = True
+            lr_warm_up_verbose: int = 1
     ) -> History or list:
         """
         启动训练进程, 所有执行非最后一个Stage的进程将监听消息,
@@ -404,7 +416,6 @@ class PipelineModel(Model):
         @param micro_batch_size: 微批次大小, 如果为None则代表不用微批次
         @param lr_warm_up_epochs: 学习率由基础值0调整至设定值 * 数据并行组的epochs数
         @param lr_warm_up_verbose: 学习率调整是否可在epochs完成时可见，1为可见，0为不可见
-        @param clear_session: 是否在训练结束后清除执行会话
         @return: Model.fit(...), 如果本进程不工作, 则None
         """
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
@@ -414,7 +425,7 @@ class PipelineModel(Model):
         if not self.__work:
             return
 
-        assert workers is None, 'current version not support specify workers'
+        lr_warm_up_epochs = min(lr_warm_up_epochs, epochs)
 
         batch_size = int(batch_size)
         if micro_batch_size is not None:
@@ -431,32 +442,16 @@ class PipelineModel(Model):
         assert 0 <= self.__pipeline_comm.rank < self.processes_require
         stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
 
-        pipeline_inputs_data_indexes = []
-        pipeline_targets_data_indexes = []
-        for pipes, data_indexes, original_index in [
-            (stage.input_pipes, pipeline_inputs_data_indexes,
-             self.__original_inputs_index),
-            (stage.output_pipes, pipeline_targets_data_indexes,
-             self.__original_outputs_index)
-        ]:
-            for each in pipes:
-                if id(each) in original_index.keys():
-                    data_indexes.append(original_index[id(each)])
-                else:
-                    data_indexes.append(None)
+        model = stage.model
 
-        for data, data_indexes in [
-            (x, set(pipeline_inputs_data_indexes)),
-            (y, set(pipeline_targets_data_indexes))
-        ]:
-            for i in range(len(data)):
-                if isinstance(data[i], DistributedData):
-                    need_data = True if i in data_indexes else False
-                    data[i].distribute(
-                        need_data,
-                        data[i].communicator.rank
-                    )
-
+        feed_inputs = self.__process_feed_data(
+            x, self.__pipeline_inputs_data_indexes,
+            stage.input_shape, 0
+        )
+        feed_targets = self.__process_feed_data(
+            y, self.__pipeline_targets_data_indexes,
+            stage.output_shape, self.pipeline_communicator.size - 1
+        )
         # 因为不能所有的callback在分布式情况下都有效，所以需要过滤掉一些callback
         filtered_callbacks = []
         for each in callbacks:
@@ -505,39 +500,105 @@ class PipelineModel(Model):
             else:
                 filtered_callbacks.append(each)
 
-        fit_args = {
-            'callbacks': filtered_callbacks,
-            'validation_split': validation_split,
-            'validation_data': validation_data,
-            'shuffle': shuffle,
-            'class_weight': class_weight,
-            'sample_weight': sample_weight,
-            'initial_epoch': initial_epoch,
-            # 'steps_per_epoch': steps_per_epoch,  这个参数需要在训练过程中重定义
-            'validation_steps': validation_steps,
-            # 'validation_batch_size': validation_batch_size, 这个参数在静态图执行模式中无法识别
-            'validation_freq': validation_freq,
-            'max_queue_size': max_queue_size,
-            # 不允许使用worker参数, tensorflow 多线程调用session会出问题
-            # 'workers': workers,
-            'use_multiprocessing': use_multiprocessing,
-            'verbose': verbose,
-            'lr_warm_up_verbose': lr_warm_up_verbose,
-            'lr_warm_up_epochs': min(epochs, lr_warm_up_epochs),
-        }
+        if self.pipeline_model_rank != 0 or \
+                self.pipeline_communicator.rank != \
+                self.pipeline_communicator.size - 1:
+            # 只有rank为0的Model且是最后一个阶段的进程才输出信息
+            verbose = lr_warm_up_verbose = 0
 
-        res = TrainingExecutor(
-            stage, self.__micro_batch_controller,
-            x, pipeline_inputs_data_indexes,
-            y, pipeline_targets_data_indexes,
-            session=self.__session,
-            batch_size=batch_size, micro_batch_size=micro_batch_size,
+        base_lr = float(backend.get_value(model.optimizer.lr))
+
+        if self.pipeline_communicator.rank == \
+                self.pipeline_communicator.size - 1:
+            # 只有每条流水线的最后一个阶段才输出metric信息，所以只在流水线的最后一个进程
+            # 加入这个callback
+            filtered_callbacks.append(
+                MetricAverageCallback(communicator=self.stage_communicator),
+            )
+
+        if self.stage_communicator.size > 1:
+            filtered_callbacks.append(
+                InitialParametersBroadcastCallBack(0, self.stage_communicator)
+            )
+
+        filtered_callbacks.extend(
+            [
+                LearningRateWarmupCallback(
+                    warmup_epochs=lr_warm_up_epochs,
+                    communicator=self.stage_communicator,
+                    verbose=lr_warm_up_verbose,
+                    initial_lr=base_lr * self.stage_communicator.size
+                ),
+            ]
+        )
+
+        history = stage.model.fit(
+            x=feed_inputs,
+            y=feed_targets,
+            batch_size=batch_size,
             epochs=epochs,
-            **fit_args
-        ).run()
-        if clear_session:
-            tf.keras.backend.clear_session()
-        return res
+            micro_batch_size=micro_batch_size,
+            callbacks=filtered_callbacks,
+            validation_split=validation_split,
+            validation_data=validation_data,
+            shuffle=shuffle,
+            class_weight=class_weight,
+            sample_weight=sample_weight,
+            initial_epoch=initial_epoch,
+            steps_per_epoch=steps_per_epoch,
+            validation_steps=validation_steps,
+            validation_batch_size=validation_batch_size,
+            validation_freq=validation_freq,
+            max_queue_size=max_queue_size,
+            workers=workers,
+            use_multiprocessing=use_multiprocessing,
+            verbose=verbose,
+        )
+
+        return history
+
+    def __process_feed_data(
+            self, feed_data, data_indexes, shapes, data_root_rank: int):
+        samples = None
+        # 先获取所有样例数
+        for i, data in enumerate(feed_data):
+            if isinstance(data, DistributedData):
+                need_data = i in data_indexes
+                data.distribute(
+                    need_data,
+                    data.communicator.rank
+                )
+                if samples is not None and data.has_data:
+                    assert samples == samples
+                else:
+                    if samples is None:
+                        samples = data.samples if data.has_data else None
+            else:
+                samples = len(data)
+
+        if self.pipeline_communicator.rank == data_root_rank:
+            assert samples is not None
+            # 广播该条流水线需要处理的数据量
+            Message.broadcast(json.dumps({
+                'samples': samples
+            }), data_root_rank, self.pipeline_communicator)
+        else:
+            msg = Message.broadcast(
+                '', data_root_rank, self.pipeline_communicator)
+            samples = json.loads(msg.msg)['samples']
+
+        result = []
+        for i, shape in enumerate(shapes):
+            if data_indexes[i] is None:
+                # 中间输出或输出, 填入0数组
+                result.append(np.zeros((samples, *shape)))
+            else:
+                assert data_indexes[i] < len(feed_data)
+                data = feed_data[data_indexes[i]]
+                if isinstance(data, DistributedData):
+                    data = data.all
+                result.append(data)
+        return result
 
     def predict(
             self,
@@ -549,7 +610,8 @@ class PipelineModel(Model):
             max_queue_size=10,
             workers=None,
             use_multiprocessing=False,
-            micro_batch_size=None) -> np.ndarray or Tuple[np.ndarray]:
+            micro_batch_size: int = None
+    ) -> np.ndarray or Tuple[np.ndarray]:
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \
             PipelineStage
 
@@ -557,57 +619,38 @@ class PipelineModel(Model):
         if not self.__work:
             return
 
-        if micro_batch_size is not None:
-            batch_size = int(batch_size)
-            micro_batch_size = int(micro_batch_size)
-            micro_batch_size = min(micro_batch_size, batch_size)
-
-        assert workers is None, 'current version not support specify workers'
-
         if not isinstance(x, (tuple, list)):
             x = (x,)
 
         stage: PipelineStage = self.__stages[self.__pipeline_comm.rank]
 
-        pipeline_inputs_data_indexes = []
-        for each in stage.input_pipes:
-            if id(each) in self.__original_inputs_index.keys():
-                pipeline_inputs_data_indexes.append(
-                    self.__original_inputs_index[id(each)]
-                )
-            else:
-                pipeline_inputs_data_indexes.append(None)
+        feed_inputs = self.__process_feed_data(
+            x, self.__pipeline_inputs_data_indexes,
+            stage.input_shape, 0
+        )
 
-        for each_data in x:
-            if isinstance(each_data, DistributedData):
-                need_data_indexes = tuple(filter(
-                    lambda a: a is not None,
-                    pipeline_inputs_data_indexes
-                ))
-                each_data.distribute(
-                    len(need_data_indexes) > 0,
-                    each_data.communicator.rank
-                )
+        if callbacks is not None:
+            assert isinstance(callbacks, list)
+            if self.pipeline_communicator.rank == \
+                    self.pipeline_communicator.size - 1:
+                callbacks.append(MetricAverageCallback())
 
-        predict_args = {
-            'callbacks': callbacks,
-            # 'steps': steps,  这个参数需要在训练过程中重定义
-            # 'validation_batch_size': validation_batch_size, 这个参数在静态图执行模式中无法识别
-            'max_queue_size': max_queue_size,
-            # 不允许使用worker参数, tensorflow 多线程调用session会出问题
-            # 'workers': workers,
-            'use_multiprocessing': use_multiprocessing,
-            'verbose': verbose
-        }
+        if self.__pipeline_model_rank != 0 \
+                or self.pipeline_communicator.rank != \
+                self.pipeline_communicator.size - 1:
+            verbose = 0
 
-        res = PredictExecutor(
-            stage, self.__micro_batch_controller,
-            x, pipeline_inputs_data_indexes,
-            session=self.__session,
-            batch_size=batch_size, micro_batch_size=micro_batch_size,
-            **predict_args
-        ).run()
-        return res
+        return stage.model.predict(
+            x=feed_inputs,
+            batch_size=batch_size,
+            callbacks=callbacks,
+            steps=steps,
+            max_queue_size=max_queue_size,
+            workers=workers,
+            use_multiprocessing=use_multiprocessing,
+            verbose=verbose,
+            micro_batch_size=micro_batch_size,
+        )
 
     def save_weights(self, dir_path, overwrite=True, save_format=None):
         from ddl.tensorflow.keras.parallelism.pipeline.stage import \

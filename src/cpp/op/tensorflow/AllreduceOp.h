@@ -5,12 +5,13 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLREDUCEOP_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_ALLREDUCEOP_H
 
-#include "tensorflow/core/framework/op_kernel.h"
+#include "op/tensorflow/AsyncOpKernelWithKey.h"
 #include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class AllreduceOp : public tensorflow::AsyncOpKernel {
+
+class AllreduceOp : public AsyncOpKernelWithKey {
 public:
     explicit AllreduceOp(tensorflow::OpKernelConstruction *context);
 

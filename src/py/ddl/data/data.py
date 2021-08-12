@@ -1,5 +1,4 @@
 from ddl.tensorflow.communicator import Communicator
-from ddl.log import info
 from ddl.message import Message
 from abc import ABCMeta, abstractmethod
 import json
@@ -58,6 +57,10 @@ class DistributedData(Data, metaclass=ABCMeta):
         super().__init__(name=name)
 
     @property
+    def all(self):
+        return self[0:self.samples]
+
+    @property
     def communicator(self) -> Communicator:
         return self.__communicator
 
@@ -91,35 +94,26 @@ class DistributedData(Data, metaclass=ABCMeta):
         在需要数据的进程的数据被实际加载前需要知道的所有样例的数量
         """
         assert self.__distributed
-        assert self.has_data
         return self.__total_samples
 
     def distribute(self, need_data: bool, key: int = None):
         assert not self.__distributed
         if key is None:
             key = self.__communicator.rank
-        assert key >= 0
-        is_total_samples_load_process = \
-            self.__total_sample_compute_process_rank == self.__communicator.rank
-        # 保证负责广播所有样例数的节点在新的通信域下的rank是0
-        key = 0 if is_total_samples_load_process else key + 1
+        if self.__total_sample_compute_process_rank == self.__communicator.rank:
+            total_samples = self._total_sample_getter()
+            Message.broadcast(json.dumps({
+                'samples': total_samples
+            }), 0, self.__communicator)
+        else:
+            msg = Message.broadcast('', 0, self.__communicator)
+            total_samples = json.loads(msg.msg)['samples']
+
         self.__distributed_comm = self.__communicator.split_communicator(
             1 if need_data else 0, key=key)
         if need_data:
-            if self.__distributed_comm.rank == 0:
-                total_samples = self._total_sample_getter()
-                Message.broadcast(json.dumps({
-                    'samples': total_samples
-                }), 0, self.__distributed_comm)
-            else:
-                msg = Message.broadcast('', 0, self.__distributed_comm)
-                total_samples = json.loads(msg.msg)['samples']
-            self.__total_samples = total_samples
-
             size = self.__distributed_comm.size
             rank = self.__distributed_comm.rank
-
-            info(f'need data, total samples: {total_samples}')
 
             assert 0 <= rank < size
             self.__samples = total_samples // size
@@ -132,6 +126,7 @@ class DistributedData(Data, metaclass=ABCMeta):
             self._initialize_data(self.__base, self.__end)
             self.__has_data = True
         self.__distributed = True
+        self.__total_samples = total_samples
 
     @abstractmethod
     def _total_sample_getter(self) -> int:

@@ -15,8 +15,9 @@ namespace lyl232 { namespace experiment { namespace ddl {
 using namespace tensorflow;
 
 REGISTER_OP("Allgather")
-        .Attr("T: {int32, int64, float32, float64}")
+        .Attr("T: numbertype")
         .Attr("communicator_id: int")
+        .Attr("key: string = ''")
         .Input("tensor: T")
         .Output("allgathered: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
@@ -25,15 +26,16 @@ REGISTER_OP("Allgather")
         });
 
 AllgatherOp::AllgatherOp(tensorflow::OpKernelConstruction *context) :
-        AsyncOpKernel(context), communicatorId_(0) {
+        AsyncOpKernelWithKey(context), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
+    OP_REQUIRES_OK(context, context->GetAttr("key", &key_));
 }
 
 void AllgatherOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace lyl232::experiment::ddl;
     using namespace std;
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
-    MS_TIME_LOG("AllgatherOp begin:" << name())
+    MS_TIME_LOG("AllgatherOp begin:" << key())
 #endif
     // 获取输入 tensor
     const Tensor &input = context->input(0);
@@ -45,14 +47,14 @@ void AllgatherOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
             controller.handleRequest(
                     make_shared<TensorAllgatherRequest>(
                             controller,
-                            name(),
+                            key(),
                             std::make_shared<TensorflowTensor>(input),
                             // allgather并不能在此申请输出张量的内存, 所以放在通信时申请
                             std::shared_ptr<TensorflowTensor>(),
                             [this, context, done](StatusCode code) {
                                 context->SetStatus(statusCode2TFStatus(code));
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
-                                MS_TIME_LOG("ReceiveTensorOp done:" << name())
+                                MS_TIME_LOG("AllgatherOp done:" << key())
 #endif
                                 done();
                             },

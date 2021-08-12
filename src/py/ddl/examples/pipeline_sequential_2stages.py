@@ -3,7 +3,19 @@ from tensorflow.keras.layers import Dense, Flatten, Conv2D, \
 import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint
 
+if __name__ == '__main__':
+    import sys
+    from os.path import abspath, join
 
+    sys.path.append(abspath(join(__file__, '../../../')))
+
+from ddl.log import exception_with_world_rank_info
+from ddl.examples.pipeline_common import MnistDistributedData, \
+    evaluate, batch_size, micro_batch_size, \
+    epochs, lr_warm_up_epochs, lr
+
+
+@exception_with_world_rank_info
 def main():
     from ddl.tensorflow.keras.parallelism.pipeline.model import \
         PipelineSequentialModel
@@ -55,7 +67,7 @@ def main():
         loss=tf.losses.SparseCategoricalCrossentropy(),
         # PipelineModel会自动使用LearningRateWarmupCallback，所以这里不需要手动将
         # 学习率乘上数据并行组数
-        optimizer=tf.optimizers.Adam(0.001),
+        optimizer=tf.optimizers.Adam(lr),
         metrics=['accuracy'],
         # 尝试进行数据并行
         try_data_parallelism=True
@@ -84,14 +96,4 @@ def main():
     evaluate(model)
 
 
-if __name__ == '__main__':
-    import sys
-    from os.path import abspath, join
-
-    sys.path.append(abspath(join(__file__, '../../../')))
-
-    from ddl.examples.pipeline_common import MnistDistributedData, \
-        evaluate, batch_size, micro_batch_size, \
-        epochs, lr_warm_up_epochs
-
-    main()
+main()

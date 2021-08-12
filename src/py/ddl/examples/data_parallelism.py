@@ -3,6 +3,23 @@ from tensorflow.keras.layers import Dense, Flatten, Conv2D, \
 import tensorflow as tf
 from argparse import ArgumentParser
 
+if __name__ == '__main__':
+    import sys
+    from os.path import abspath, join
+
+    sys.path.append(abspath(join(__file__, '../../../')))
+
+from ddl.log import exception_with_world_rank_info
+from ddl.tensorflow.communicator import Communicator
+from ddl.tensorflow.keras.parallelism.data import \
+    data_parallelism_distributed_optimizer_wrapper
+from ddl.tensorflow.keras.parallelism.data import \
+    InitialParametersBroadcastCallBack
+from ddl.tensorflow.keras.parallelism.data.lr_warm_up_callback import \
+    LearningRateWarmupCallback
+from ddl.tensorflow.keras.parallelism.data.metric_average_callback import \
+    MetricAverageCallback
+
 parser = ArgumentParser()
 parser.add_argument('--dataset', default='mnist', type=str)
 parser.add_argument('--batch_size', default=128, type=int)
@@ -53,17 +70,8 @@ def get_processing_data(data, communicator):
     return data[begin:end, ...]
 
 
+@exception_with_world_rank_info
 def main():
-    from ddl.tensorflow.communicator import Communicator
-    from ddl.tensorflow.keras.parallelism.data import \
-        data_parallelism_distributed_optimizer_wrapper
-    from ddl.tensorflow.keras.parallelism.data import \
-        InitialParametersBroadcastCallBack
-    from ddl.tensorflow.keras.parallelism.data.lr_warm_up_callback import \
-        LearningRateWarmupCallback
-    from ddl.tensorflow.keras.parallelism.data.metric_average_callback import \
-        MetricAverageCallback
-
     # 基础学习率
     base_lr = args.lr
 
@@ -113,10 +121,4 @@ def main():
     )
 
 
-if __name__ == '__main__':
-    import sys
-    from os.path import abspath, join
-
-    sys.path.append(abspath(join(__file__, '../../../')))
-
-    main()
+main()

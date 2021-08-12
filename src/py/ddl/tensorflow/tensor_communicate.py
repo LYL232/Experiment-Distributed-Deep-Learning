@@ -10,59 +10,76 @@ def allreduce_gradient(
         tensor: Tensor or tf.IndexedSlices,
         communicator: Communicator,
         return_mean: bool = True,
+        key: str = ''
 ):
     """
     对梯度张量进行全规约操作, 根据tensor是否是稀疏张量选择进行allreduce还是allgather操作
     @param tensor: 梯度张量
     @param communicator: 通信域
     @param return_mean: 是否返回平均值
+    @param key: 张量的关键字，用于区分不同的allreduce请求
     @return:
     """
     if isinstance(tensor, Tensor):
-        summed = allreduce(tensor, communicator)
+        summed = allreduce(tensor, communicator, key=key)
         if return_mean:
             return summed / communicator.size
         return summed
-    values = allgather(tensor.values, communicator)
-    if return_mean:
-        values = values / communicator.size
-    indices = allgather(tensor.indices, communicator)
-    return tf.IndexedSlices(values, indices, dense_shape=tensor.dense_shape)
+    if isinstance(tensor, tf.IndexedSlices):
+        summed = allreduce(tf.convert_to_tensor(tensor), communicator, key=key)
+        if return_mean:
+            return summed / communicator.size
+        return summed
+        # todo: 现有bug，暂不支持tf.IndexedSlices
+        # values = allgather(tensor.values, communicator)
+        # if return_mean:
+        #     values = values / communicator.size
+        # indices = allgather(tensor.indices, communicator)
+        # return tf.IndexedSlices(values, indices, dense_shape=tensor.dense_shape)
+    else:
+        raise ValueError(f'not supported gradient tensor type: {type(tensor)}')
 
 
-def allreduce(tensor: Tensor, communicator: Communicator):
+def allreduce(tensor: Tensor, communicator: Communicator, key: str = ''):
     """
     对Tensor进行Allreduce操作
-    :@param tensor:
-    :@param communicator: 进行allreduce操作的通信域
-    :@return:
+    @param tensor:
+    @param communicator: 进行allreduce操作的通信域
+    @param key: 张量的关键字，用于区分不同的allreduce请求
+    @return:
     """
     return CPPBackend.tf_lib().allreduce(
-        tensor, communicator_id=communicator.id
+        tensor, communicator_id=communicator.id, key=key
     )
 
 
-def allgather(tensor: Tensor, communicator: Communicator):
+def allgather(tensor: Tensor, communicator: Communicator, key: str = ''):
     """
     对Tensor进行allgather操作
-    :@param tensor:
-    :@param communicator: 进行操作的通信域
-    :@return:
+    @param tensor:
+    @param communicator: 进行操作的通信域
+    @param key: 张量的关键字，用于区分不同的allgather请求
+    @return:
     """
     return CPPBackend.tf_lib().allgather(
-        tensor, communicator_id=communicator.id)
+        tensor, communicator_id=communicator.id, key=key
+    )
 
 
-def broadcast(tensor: Tensor, root_rank: int, communicator: Communicator):
+def broadcast(
+        tensor: Tensor, root_rank: int, communicator: Communicator,
+        key: str = ''):
     """
     对tensor进行广播操作
-    :@param tensor:
-    :@param root_rank: 广播根节点
-    :@param communicator: 广播通信域
-    :@return:
+    @param tensor:
+    @param root_rank: 广播根节点
+    @param communicator: 广播通信域
+    @param key: 张量的关键字，用于区分不同的broadcast请求
+    @return:
     """
     return CPPBackend.tf_lib().broadcast(
-        tensor, root_rank=root_rank, communicator_id=communicator.id
+        tensor, root_rank=root_rank, communicator_id=communicator.id,
+        key=key
     )
 
 
@@ -71,7 +88,10 @@ def broadcast_by_group_eagerly(
         tensors: Iterable, root_rank: int,
         communicator: Communicator):
     for tensor in tensors:
-        tensor.assign(broadcast(tensor, root_rank, communicator))
+        tensor.assign(
+            broadcast(
+                tensor, root_rank, communicator, key=f'Broadcast/{tensor.name}')
+        )
 
 
 def broadcast_by_group(
@@ -83,7 +103,12 @@ def broadcast_by_group(
     else:
         # Graph mode requires an Op
         return tf.group(
-            *[tensor.assign(broadcast(tensor, root_rank, communicator))
+            *[tensor.assign(
+                broadcast(
+                    tensor, root_rank, communicator,
+                    key=f'Broadcast/{tensor.name}'
+                )
+            )
               for tensor in tensors]
         )
 

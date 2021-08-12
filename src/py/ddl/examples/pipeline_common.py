@@ -11,11 +11,12 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 
 parser.add_argument('--seed', type=int, default=42)
-parser.add_argument('--batch_size', type=int, default=1000)
-parser.add_argument('--micro_batch_size', type=int, default=100)
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--micro_batch_size', type=int, default=32)
 parser.add_argument('--epochs', type=int, default=20)
 parser.add_argument('--in_graph_mode', action='store_true')
 parser.add_argument('--lr_warm_up_epochs', type=int, default=5)
+parser.add_argument('--lr', type=float, default=0.001)
 
 arguments = parser.parse_args()
 
@@ -25,6 +26,7 @@ micro_batch_size = arguments.micro_batch_size
 epochs = arguments.epochs
 seed = arguments.seed
 lr_warm_up_epochs = arguments.lr_warm_up_epochs
+lr = arguments.lr
 
 if arguments.in_graph_mode:
     print('execute in graph')
@@ -72,7 +74,9 @@ class MnistDistributedData(DistributedData):
 def evaluate(model: PipelineModel):
     result = model.predict(
         MnistDistributedData(test=True, label=False),
-        batch_size=batch_size, micro_batch_size=micro_batch_size, verbose=1)
+        batch_size=batch_size, verbose=1,
+        micro_batch_size=micro_batch_size
+    )
 
     label = MnistDistributedData(test=True, label=True)
 

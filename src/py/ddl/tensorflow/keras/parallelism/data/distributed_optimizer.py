@@ -19,6 +19,7 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
         super(self.__class__, self).__init__(**kwargs)
         self.__gradients_allreduced = False
         self.communicator: Communicator = Communicator.world()
+        self.__allreduce_fn = None
 
     def get_gradients(self, loss, params):
         return self.__allreduce(self.original_get_gradients(loss, params))
@@ -43,29 +44,47 @@ class DataParallelismDistributedOptimizer(Optimizer, ABC):
     def __allreduce(self, grads):
         if len(grads) == 0:
             return grads
-        self.__gradients_allreduced = 'Allreduce' in grads[0].name
-        if self.__gradients_allreduced:
-            return grads
+        self.__gradients_allreduced = False
+        for each in grads:
+            if each is not None:
+                if util.executing_eagerly():
+                    allreduced = getattr(each, 'done_allreduced', False)
+                    self.__gradients_allreduced = allreduced
+                else:
+                    self.__gradients_allreduced = 'Allreduce' in each.name
+                if self.__gradients_allreduced:
+                    return grads
 
-        def allreduce_grads():
-            with tf.name_scope(self.__name + 'Allreduce'):
+        opt_name = self.__name
+
+        def allreduce_grads(gradients):
+            with tf.name_scope(opt_name + 'Allreduce'):
                 return [
                     tf.cond(
                         tf.convert_to_tensor(
                             self.communicator.size > 1
                         ),
                         lambda: allreduce_gradient(grad, self.communicator),
-                        lambda: grad,
+                        lambda: tf.convert_to_tensor(grad)
+                        # allgather尚有bug，目前不支持
+                        if isinstance(grad, tf.IndexedSlices) else grad,
                         name='if-do-allreduce'
                     )
                     if grad is not None else grad
-                    for grad in grads
+                    for grad in gradients
                 ]
 
         if util.executing_eagerly():
-            allreduce_grads = util.make_tf_function(allreduce_grads)
+            if self.__allreduce_fn is None:
+                self.__allreduce_fn = util.make_tf_function(allreduce_grads)
+            # 因为eager模式下不能通过name来判断是否已经规约，所以设置一个属性
+            for each in grads:
+                setattr(each, 'done_allreduced', True)
+        else:
+            self.__allreduce_fn = allreduce_grads
+
         self.__gradients_allreduced = True
-        return allreduce_grads()
+        return self.__allreduce_fn(grads)
 
     @property
     def is_distributed_optimizer(self) -> bool:

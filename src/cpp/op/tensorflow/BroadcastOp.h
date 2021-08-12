@@ -5,12 +5,12 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BROADCASTOP_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_BROADCASTOP_H
 
-#include "tensorflow/core/framework/op_kernel.h"
+#include "op/tensorflow/AsyncOpKernelWithKey.h"
 #include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class BroadcastOp : public tensorflow::AsyncOpKernel {
+class BroadcastOp : public AsyncOpKernelWithKey {
 public:
     explicit BroadcastOp(tensorflow::OpKernelConstruction *context);
 

@@ -14,11 +14,12 @@ namespace lyl232 { namespace experiment { namespace ddl {
 using namespace tensorflow;
 
 REGISTER_OP("ReceiveTensor")
-        .Attr("T: {int32, int64, float32, float64}")
+        .Attr("T: numbertype")
         .Input("input: T")
         .Attr("sender: int")
         .Attr("communicator_id: int")
         .Attr("tag: int")
+        .Attr("key: string = ''")
         .Output("received: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
@@ -26,16 +27,17 @@ REGISTER_OP("ReceiveTensor")
         });
 
 ReceiveTensorOp::ReceiveTensorOp(tensorflow::OpKernelConstruction *context) :
-        AsyncOpKernel(context), sender_(-1), tag_(-1), communicatorId_(0) {
+        AsyncOpKernelWithKey(context), sender_(-1), tag_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("sender", &sender_));
     OP_REQUIRES_OK(context, context->GetAttr("tag", &tag_));
     OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
+    OP_REQUIRES_OK(context, context->GetAttr("key", &key_));
 }
 
 void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace std;
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
-    MS_TIME_LOG("ReceiveTensorOp begin:" << name())
+    MS_TIME_LOG("ReceiveTensorOp begin:" << key())
 #endif
 
     const Tensor &input = context->input(0);
@@ -52,12 +54,12 @@ void ReceiveTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) 
     global.end2EndCommunicateController().handleRequest(
             make_shared<TensorReceiveCommunicateRequest>(
                     global.end2EndCommunicateController(),
-                    name(),
+                    key(),
                     make_shared<TensorflowTensor>(input),
                     [this, context, done](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
-                        MS_TIME_LOG("ReceiveTensorOp done:" << name())
+                        MS_TIME_LOG("ReceiveTensorOp done:" << key())
 #endif
                         done();
                     },

@@ -5,12 +5,12 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_SEND_OP_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_SEND_OP_H
 
-#include "tensorflow/core/framework/op_kernel.h"
+#include "op/tensorflow/AsyncOpKernelWithKey.h"
 #include "communicate/backend/Communicator.h"
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class SendTensorOp : public tensorflow::AsyncOpKernel {
+class SendTensorOp : public AsyncOpKernelWithKey {
 public:
     explicit SendTensorOp(tensorflow::OpKernelConstruction *context);
 

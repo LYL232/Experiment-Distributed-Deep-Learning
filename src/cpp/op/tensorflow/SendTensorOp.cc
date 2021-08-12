@@ -16,11 +16,12 @@ namespace lyl232 { namespace experiment { namespace ddl {
 using namespace tensorflow;
 
 REGISTER_OP("SendTensor")
-        .Attr("T: {int32, int64, float32, float64}")
+        .Attr("T: numbertype")
         .Input("send: T")
         .Attr("receiver: int")
         .Attr("communicator_id: int")
         .Attr("tag: int")
+        .Attr("key: string = ''")
         .Output("result: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
             c->set_output(0, c->input(0));
@@ -28,17 +29,18 @@ REGISTER_OP("SendTensor")
         });
 
 SendTensorOp::SendTensorOp(tensorflow::OpKernelConstruction *context) :
-        AsyncOpKernel(context), receiver_(-1), tag_(-1), communicatorId_(0) {
+        AsyncOpKernelWithKey(context), receiver_(-1), tag_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("receiver", &receiver_));
     OP_REQUIRES_OK(context, context->GetAttr("tag", &tag_));
     OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
+    OP_REQUIRES_OK(context, context->GetAttr("key", &key_));
 }
 
 void SendTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace std;
     const Tensor &sendingTensor = context->input(0);
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
-    MS_TIME_LOG("SendTensorOp begin:" << name())
+    MS_TIME_LOG("SendTensorOp begin:" << key())
 #endif
 
     // 仅仅是转发tensor
@@ -54,12 +56,12 @@ void SendTensorOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     global.end2EndCommunicateController().handleRequest(
             make_shared<TensorSendCommunicateRequest>(
                     global.end2EndCommunicateController(),
-                    name(),
+                    key(),
                     std::make_shared<TensorflowTensor>(sendingTensor),
                     [this, context, done](StatusCode code) {
                         context->SetStatus(statusCode2TFStatus(code));
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
-                        MS_TIME_LOG("SendTensorOp done:" << name())
+                        MS_TIME_LOG("SendTensorOp done:" << key())
 #endif
                         done();
                     },

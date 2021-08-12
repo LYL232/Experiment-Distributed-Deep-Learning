@@ -404,7 +404,10 @@ StatusCode RingTokenCommunicateHandler::communicateById_(
 
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RING_TOKEN_COMMUNICATE_LOG_COMMUNICATE
     communicatingTensorsDesc.append(")");
-    GLOBAL_INFO_WITH_THREAD_ID("communicating Tensors: " << communicatingTensorsDesc)
+    GLOBAL_INFO_WITH_THREAD_ID(
+            "RingTokenCommunicateHandler-Communicator-"
+                    << communicator_->id()
+                    << " : communicating Tensors: " << communicatingTensorsDesc)
 #endif
     return requests.front()->collectiveCommunicate(requests);
 }

@@ -44,7 +44,7 @@ RingTokenCommunicateController::~RingTokenCommunicateController() {
     for (auto iter = orderedByEnteringHandlerMap_.begin(); iter != orderedByEnteringHandlerMap_.end(); ++iter) {
         GLOBAL_INFO_WITH_THREAD_ID("deleting RingTokenCommunicateHandler-" << iter->second.get())
         orderedByEnteringHandlerMap_.erase(iter);
-        GLOBAL_INFO_WITH_THREAD_ID("deletind RingTokenCommunicateHandler-" << iter->second.get())
+        GLOBAL_INFO_WITH_THREAD_ID("deleted RingTokenCommunicateHandler-" << iter->second.get())
     }
     pthread_rwlock_unlock(&rwlock_);
     pthread_rwlock_destroy(&rwlock_);

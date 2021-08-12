@@ -15,9 +15,10 @@ namespace lyl232 { namespace experiment { namespace ddl {
 using namespace tensorflow;
 
 REGISTER_OP("Broadcast")
-        .Attr("T: {int32, int64, float32, float64}")
+        .Attr("T: numbertype")
         .Attr("communicator_id: int")
         .Attr("root_rank: int")
+        .Attr("key: string = ''")
         .Input("tensor: T")
         .Output("broadcasted: T")
         .SetShapeFn([](shape_inference::InferenceContext *c) {
@@ -26,16 +27,17 @@ REGISTER_OP("Broadcast")
         });
 
 BroadcastOp::BroadcastOp(tensorflow::OpKernelConstruction *context) :
-        AsyncOpKernel(context), rootRank_(-1), communicatorId_(0) {
+        AsyncOpKernelWithKey(context), rootRank_(-1), communicatorId_(0) {
     OP_REQUIRES_OK(context, context->GetAttr("root_rank", &rootRank_));
     OP_REQUIRES_OK(context, context->GetAttr("communicator_id", &communicatorId_));
+    OP_REQUIRES_OK(context, context->GetAttr("key", &key_));
 }
 
 void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
     using namespace lyl232::experiment::ddl;
     using namespace std;
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_BEGIN_TIME_POINT
-    MS_TIME_LOG("BroadcastOp begin:" << name())
+    MS_TIME_LOG("BroadcastOp begin:" << key())
 #endif
 
     // 获取输入 tensor
@@ -53,13 +55,13 @@ void BroadcastOp::ComputeAsync(OpKernelContext *context, DoneCallback done) {
             controller.handleRequest(
                     make_shared<TensorBroadcastRequest>(
                             controller,
-                            name(),
+                            key(),
                             std::make_shared<TensorflowTensor>(input),
                             std::make_shared<TensorflowTensor>(*output),
                             [this, context, done](StatusCode code) {
                                 context->SetStatus(statusCode2TFStatus(code));
 #if LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LOG_OP_DONE_TIME_POINT
-                                MS_TIME_LOG("BroadcastOp done:" << name())
+                                MS_TIME_LOG("BroadcastOp done:" << key())
 #endif
                                 done();
                             },

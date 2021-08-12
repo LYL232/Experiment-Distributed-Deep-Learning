@@ -5,13 +5,13 @@
 #ifndef LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RECEIVETENSOROP_H
 #define LYL232_EXPERIMENT_DISTRIBUTED_DEEP_LEARNING_RECEIVETENSOROP_H
 
-#include "tensorflow/core/framework/op_kernel.h"
+#include "op/tensorflow/AsyncOpKernelWithKey.h"
 #include "communicate/backend/Communicator.h"
 
 
 namespace lyl232 { namespace experiment { namespace ddl {
 
-class ReceiveTensorOp : public tensorflow::AsyncOpKernel {
+class ReceiveTensorOp : public AsyncOpKernelWithKey {
 public:
     __attribute__((unused)) explicit ReceiveTensorOp(tensorflow::OpKernelConstruction *context);
 

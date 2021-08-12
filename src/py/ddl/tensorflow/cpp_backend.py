@@ -96,3 +96,13 @@ class CPPBackend:
 @tf.RegisterGradient('TimeLog')
 def time_log(_unused_op, grad):
     return grad
+
+
+@tf.RegisterGradient('SendTensor')
+def send_tensor(_unused_op, grad):
+    return grad
+
+
+@tf.RegisterGradient('ReceiveTensor')
+def receive_tensor(_unused_op, grad):
+    return grad
