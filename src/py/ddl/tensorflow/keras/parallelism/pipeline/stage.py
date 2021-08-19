@@ -160,20 +160,27 @@ class PipelineKerasImplementModel(ModelV2):
 
         predicts = [[] for _ in range(output_num)]
         mb_preds = []
+        Log.time_log(
+            f'batch forward propagation begin', TimeUnit.MS, log_type=pmb)
         with backprop.GradientTape(persistent=True) as tape:
             for i, (mb_begin, mb_end) in enumerate(mb_sizes):
                 mb_inputs = stage.get_micro_batch_inputs(
                     [x[j][mb_begin:mb_end] for j in range(input_num)])
+                Log.time_log(
+                    f'micro batch forward propagation {i} '
+                    f'[{mb_begin}, {mb_end}] begin',
+                    TimeUnit.MS, log_type=pmb
+                )
                 mb_pred = self(mb_inputs, training=True)
+                Log.time_log(
+                    f'micro batch forward propagation {i} '
+                    f'[{mb_begin}, {mb_end}] end',
+                    TimeUnit.MS, log_type=pmb
+                )
                 # todo: 让模型都返回tuple而不是直接返回张量
                 if not isinstance(mb_pred, (tuple, list)):
                     mb_pred = [mb_pred]
                 stage.send_micro_batch_outputs(mb_pred, mb_begin, mb_end)
-                Log.time_log(
-                    f'micro batch forward propagation {i} '
-                    f'[{mb_begin}, {mb_end}] finished',
-                    TimeUnit.MS, log_type=pmb
-                )
                 for j in range(output_num):
                     predicts[j].append(mb_pred[j])
                 mb_preds.append(mb_pred)
@@ -185,11 +192,22 @@ class PipelineKerasImplementModel(ModelV2):
 
         float_batch_size = tf.cast(batch_size, dtype=tf.float32)
 
+        stage.wait_sent_micro_batch_outputs()
+        Log.time_log(
+            f'batch forward propagation end', TimeUnit.MS, log_type=pmb)
+        Log.time_log(
+            f'batch backward propagation begin', TimeUnit.MS, log_type=pmb)
+
         for i, (mb_begin, mb_end) in enumerate(mb_sizes):
             with tape:
                 mb_target = stage.get_micro_batch_targets(
                     [y[j][mb_begin:mb_end] for j in range(output_num)])
 
+                Log.time_log(
+                    f'micro batch backward propagation {i} '
+                    f'[{mb_begin}, {mb_end}] begin',
+                    TimeUnit.MS, log_type=pmb
+                )
                 if is_output_stage:
                     target = self.compiled_loss(
                         mb_target, mb_preds[i],
@@ -200,7 +218,6 @@ class PipelineKerasImplementModel(ModelV2):
                         target = self.optimizer.get_scaled_loss(target)
                 else:
                     target = mb_preds[i]
-
             if is_output_stage:
                 grads = tape.gradient(target, self.trainable_variables)
             else:
@@ -208,18 +225,18 @@ class PipelineKerasImplementModel(ModelV2):
                     target, self.trainable_variables,
                     output_gradients=mb_target
                 )
-            stage.send_micro_batch_grads()
             Log.time_log(
                 f'micro batch backward propagation {i} '
-                f'[{mb_begin}, {mb_end}] finished',
+                f'[{mb_begin}, {mb_end}] end',
                 TimeUnit.MS,
                 log_type=pmb
             )
+            stage.send_micro_batch_grads()
+
             for j, gard in enumerate(grads):
                 if gard is not None:
                     if isinstance(self.optimizer, lso.LossScaleOptimizer):
-                        gard = self.optimizer.get_unscaled_gradients(
-                            gard)
+                        gard = self.optimizer.get_unscaled_gradients(gard)
                     accumulated_gradients[j] = accumulated_gradients[j] + (
                             gard *
                             tf.cast(mb_end - mb_begin, dtype=tf.float32) /
@@ -234,6 +251,10 @@ class PipelineKerasImplementModel(ModelV2):
             self.optimizer.apply_gradients(
                 zip(accumulated_gradients, self.trainable_variables))
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
+
+        stage.wait_sent_micro_batch_grads()
+        Log.time_log(
+            f'batch backward propagation end', TimeUnit.MS, log_type=pmb)
 
         return {m.name: m.result() for m in self.metrics}
 
@@ -261,18 +282,25 @@ class PipelineKerasImplementModel(ModelV2):
         for i, (mb_begin, mb_end) in enumerate(mb_sizes):
             mb_inputs = stage.get_micro_batch_inputs(
                 [x[j][mb_begin:mb_end] for j in range(input_num)])
+            Log.time_log(
+                f'micro batch forward propagation {i} '
+                f'[{mb_begin}, {mb_end}] begin',
+                TimeUnit.MS, log_type=pmb
+            )
             mb_pred = self(mb_inputs, training=True)
+            Log.time_log(
+                f'micro batch forward propagation {i} '
+                f'[{mb_begin}, {mb_end}] end',
+                TimeUnit.MS, log_type=pmb
+            )
             # todo: 让模型都返回tuple而不是直接返回张量
             if not isinstance(mb_pred, (tuple, list)):
                 mb_pred = (mb_pred,)
             stage.send_micro_batch_outputs(mb_pred, mb_begin, mb_end)
-            Log.time_log(
-                f'micro batch forward propagation {i} '
-                f'[{mb_begin}, {mb_end}] finished',
-                TimeUnit.MS, log_type=pmb
-            )
             for j in range(output_num):
                 predicts[j].append(mb_pred[j])
+
+        stage.wait_sent_micro_batch_outputs()
 
         y_pred = [tf.concat(predicts[i], axis=0) for i in range(output_num)]
         return y_pred
@@ -447,18 +475,19 @@ class PipelineStage(metaclass=ABCMeta):
             mb_inputs[i] = each.wait_and_get_receive_forward(mb_inputs[i])
         return mb_inputs
 
-    def send_micro_batch_outputs(self, mb_outputs, mb_begin, mb_end):
+    def send_micro_batch_outputs(self, fp, mb_begin, mb_end):
         for i, each in enumerate(self.pipeline_output_layers):
-            if len(mb_outputs[i].shape) == len(self.output_shape[i]):
+            if len(fp[i].shape) == len(self.output_shape[i]):
                 # 如果输出的没有批次这一维度，需要扩充维度使得维度相等
-                mb_outputs[i] = tf.tile(
-                    tf.expand_dims(mb_outputs[i], 0),
+                fp[i] = tf.tile(
+                    tf.expand_dims(fp[i], 0),
                     [mb_end - mb_begin, *[1 for each in self.output_shape[i]]]
                 )
+            each.send_forward(fp[i])
 
-            each.send_forward(mb_outputs[i])
+    def wait_sent_micro_batch_outputs(self):
         for each in self.pipeline_output_layers:
-            each.join_send_forward()
+            each.wait_all_forward_sent()
 
     def get_micro_batch_targets(self, mb_targets):
         for i, each in enumerate(self.pipeline_output_layers):
@@ -470,8 +499,10 @@ class PipelineStage(metaclass=ABCMeta):
     def send_micro_batch_grads(self):
         for each in self.pipeline_input_layers:
             each.send_backward()
+
+    def wait_sent_micro_batch_grads(self):
         for each in self.pipeline_input_layers:
-            each.join_send_backward()
+            each.wait_all_backward_sent()
 
     def __call__(self, *args, **kwargs) -> tuple or PipelinePipe:
         assert not self.__called, 'can not call PipelineStage more than once'

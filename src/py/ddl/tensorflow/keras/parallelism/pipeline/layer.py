@@ -4,7 +4,8 @@ from ddl.log import Log
 from tensorflow.keras.layers import Layer
 import tensorflow as tf
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
-from threading import Thread, Event
+from threading import Thread, Condition
+from enum import Enum
 
 
 class PipelineInputLayer(Layer):
@@ -242,6 +243,22 @@ class PipelineOutputLayer(Layer):
 epct = Log.new_log_type(-1, False, 'eager pipeline communicating thread')
 
 
+class TensorCommunicateTaskType(Enum):
+    FORWARD = 0
+    BACKWARD = 1
+    EXIT = 2
+
+
+class TensorCommunicateTask:
+    def __init__(self, task_type: TensorCommunicateTaskType, data):
+        self.__task_type = task_type
+        self.data = data
+
+    @property
+    def type(self) -> TensorCommunicateTaskType:
+        return self.__task_type
+
+
 class EagerPipelineInputLayer(Layer):
     def __init__(
             self, stage, pipe: PipelinePipe,
@@ -261,24 +278,34 @@ class EagerPipelineInputLayer(Layer):
         self._stage = stage
         self._communicator = stage.pipeline_model.pipeline_communicator
         self._pipe = pipe
+        self._index = pipe.index_of(stage)
         self._fake_kernel = None
         self._pipeline_model_rank = stage.pipeline_model.pipeline_model_rank
         self._convey_gradient = pipe.convey_gradient()
         self._last_grad = None
         self._pipeline_input = None
         self._handle_thread = None
-        self._got_task_event = None
-        self._task_finish_event = None
-        self._task_obj = None
+        self._task_cond = None
+        self._result_cond = None
+        self._task_queue = None
+        self._task_received = None
+        self._result_queue = None
+        self._task_completed = None
+
+    @property
+    def index(self) -> int:
+        return self._index
 
     def build(self, input_shape):
         if self._pipe.comes_from is not None:
             self._fake_kernel = self.add_weight(shape=(1,), trainable=True)
-            self._got_task_event = Event()
-            self._task_finish_event = Event()
-            self._task_obj = {}
+            self._task_queue = []
+            self._result_queue = []
+            self._task_cond = Condition()
+            self._result_cond = Condition()
             self._handle_thread = Thread(
                 target=self._handle_thread_fn, daemon=True)
+            self._task_received = self._task_completed = 0
             self._handle_thread.start()
         self.built = True
 
@@ -318,31 +345,66 @@ class EagerPipelineInputLayer(Layer):
     def receive_forward(self, feed_input):
         if self._pipe.comes_from is None:
             return
-        self._task_obj['data'] = feed_input
-        self._task_obj['type'] = 'forward'
-        self._got_task_event.set()
+        with self._task_cond:
+            self._task_queue.append(
+                TensorCommunicateTask(
+                    TensorCommunicateTaskType.FORWARD,
+                    feed_input
+                )
+            )
+            self._task_received += 1
+            self._task_cond.notify_all()
+            Log.debug(
+                f'PipelineInputLayer-{self.index} got receive forward task',
+                log_type=epct
+            )
 
     def wait_and_get_receive_forward(self, original_inputs):
         if self._pipe.comes_from is None:
             return original_inputs
-        self._task_finish_event.wait()
-        self._task_finish_event.clear()
-        res = self._task_obj['data']
-        self._task_obj['data'] = None
-        return res
+        with self._result_cond:
+            while len(self._result_queue) == 0:
+                Log.debug(
+                    f'PipelineInputLayer-{self.index} wait receive forward',
+                    log_type=epct
+                )
+                self._result_cond.wait()
+                Log.debug(
+                    f'PipelineInputLayer-{self.index} receive forward await',
+                    log_type=epct
+                )
+            Log.debug(
+                f'PipelineInputLayer-{self.index} got result', log_type=epct
+            )
+            result = self._result_queue.pop(0)
+
+        return result
 
     def send_backward(self):
         if self._pipe.comes_from is None:
             return
-        self._task_obj['type'] = 'backward'
-        self._got_task_event.set()
+        with self._task_cond:
+            self._task_queue.append(TensorCommunicateTask(
+                TensorCommunicateTaskType.BACKWARD, self._last_grad
+            ))
+            self._task_received += 1
+            self._task_cond.notify_all()
+            Log.debug(
+                f'PipelineInputLayer-{self.index} got send backward task',
+                log_type=epct
+            )
 
-    def join_send_backward(self):
+    def wait_all_backward_sent(self):
         if self._pipe.comes_from is None:
             return
-        self._task_finish_event.wait()
-        self._task_finish_event.clear()
-        self._task_obj['data'] = None
+        with self._result_cond:
+            while self._task_received > self._task_completed:
+                self._result_cond.wait()
+        self._task_received = self._task_completed = 0
+        Log.debug(
+            f'PipelineInputLayer-{self.index} sent all micro batch backwards',
+            log_type=epct
+        )
 
     def _handle_thread_fn(self):
         pipe = self._pipe
@@ -352,58 +414,64 @@ class EagerPipelineInputLayer(Layer):
         communicator_id = self._communicator.id
         comes_from_stage_rank = pipe.comes_from.stage_rank
         comes_from_output_index = pipe.index_of(pipe.comes_from)
-        input_index = pipe.index_of(stage)
-
-        Log.debug(f'input-layer-{input_index} ready', log_type=epct)
 
         while True:
-            Log.debug(f'input-layer-{input_index} wait task', log_type=epct)
-            self._got_task_event.wait()
-            self._got_task_event.clear()
-            if self._task_obj['type'] == 'forward':
-                Log.debug(f'input-layer-{input_index}'
+            with self._task_cond:
+                while len(self._task_queue) == 0:
+                    Log.debug(f'PipelineInputLayer-{self.index} wait task',
+                              log_type=epct)
+                    self._task_cond.wait()
+                task: TensorCommunicateTask = self._task_queue.pop(0)
+            if task.type == TensorCommunicateTaskType.FORWARD:
+                Log.debug(f'PipelineInputLayer-{self.index}'
                           f' got forward task', log_type=epct)
-                x = CPPBackend.tf_lib().receive_tensor(
-                    self._task_obj['data'],
+                received = CPPBackend.tf_lib().receive_tensor(
+                    task.data,
                     sender=comes_from_stage_rank,
                     communicator_id=communicator_id,
-                    tag=input_index,
+                    tag=self.index,
                     key=f'pipeline-{pipeline_model_rank}-'
                         f'stage-{stage_rank}-'
-                        f'input-{input_index}-'
+                        f'input-{self.index}-'
                         f'receive-forward-from-stage-'
                         f'{comes_from_stage_rank}-output-'
                         f'{comes_from_output_index}'
                 )
-                self._task_obj['data'] = x
-                Log.debug(f'input-layer-{input_index}'
+                with self._result_cond:
+                    self._result_queue.append(received)
+                    self._task_completed += 1
+                    self._result_cond.notify_all()
+                Log.debug(f'PipelineInputLayer-{self.index}'
                           f' finish forward task', log_type=epct)
-            elif self._task_obj['type'] == 'backward':
-                Log.debug(f'input-layer-{input_index}'
+            elif task.type == TensorCommunicateTaskType.BACKWARD:
+                Log.debug(f'PipelineInputLayer-{self.index}'
                           f' got backward task', log_type=epct)
                 CPPBackend.tf_lib().send_tensor(
-                    self._last_grad,
+                    task.data,
                     receiver=pipe.comes_from.stage_rank,
-                    tag=input_index,
+                    tag=self.index,
                     communicator_id=communicator_id,
                     key=f'gradients-of-stage-'
                         f'{comes_from_stage_rank}'
                         f'-pipeline-input-'
                         f'{comes_from_output_index}'
                 )
-                Log.debug(f'input-layer-{input_index}'
+                with self._result_cond:
+                    self._task_completed += 1
+                    self._result_cond.notify_all()
+                Log.debug(f'PipelineInputLayer-{self.index}'
                           f' finish backward task', log_type=epct)
             else:
                 return
-            Log.debug(f'input-layer-{input_index}'
-                      f' notify main thread finished', log_type=epct)
-            self._task_finish_event.set()
 
     def __del__(self):
         if self._handle_thread is not None:
             # todo: 验证一下每个线程是否都退出了
-            self._task_obj['type'] = 'exit'
-            self._got_task_event.set()
+            with self._task_cond:
+                self._task_queue.append(TensorCommunicateTask(
+                    TensorCommunicateTaskType.EXIT, None
+                ))
+                self._task_cond.notify_all()
             self._handle_thread.join()
 
 
@@ -426,29 +494,43 @@ class EagerPipelineOutputLayer(Layer):
         self._stage = stage
         self._communicator = stage.pipeline_model.pipeline_communicator
         self._pipe = pipe
+        self._index = pipe.index_of(stage)
         self._pipeline_model_rank = stage.pipeline_model.pipeline_model_rank
         self._convey_gradient = pipe.convey_gradient()
-        self._got_task_events = None
-        self._task_finish_events = None
         self._task_obj = None
         self._handle_threads = None
-        self._output_variable = False
+        self._task_conds = None
+        self._task_queues = None
+        self._task_received = None
+        self._result_conds = None
+        self._result_queues = None
+        self._task_completed = None
 
     @property
-    def output_variable(self) -> bool:
-        return self._output_variable
+    def index(self) -> int:
+        return self._index
 
     def build(self, input_shape):
         self.built = True
         if len(self._pipe.send_to) > 0:
-            self._got_task_events = [Event() for _ in self._pipe.send_to]
-            self._task_finish_events = [Event() for _ in self._pipe.send_to]
-            self._task_obj = {}
-
-            self._handle_threads = [
-                Thread(target=self._handle_thread_fn, args=(i,), daemon=True)
-                for i in range(len(self._pipe.send_to))
-            ]
+            self._handle_threads = []
+            self._task_conds = []
+            self._task_queues = []
+            self._result_conds = []
+            self._result_queues = []
+            self._task_received = []
+            self._task_completed = []
+            for i in range(len(self._pipe.send_to)):
+                self._task_conds.append(Condition())
+                self._task_queues.append([])
+                self._result_conds.append(Condition())
+                self._result_queues.append([])
+                self._task_received.append(0)
+                self._task_completed.append(0)
+                self._handle_threads.append(
+                    Thread(target=self._handle_thread_fn, args=(i,),
+                           daemon=True)
+                )
             for each in self._handle_threads:
                 each.start()
 
@@ -458,88 +540,131 @@ class EagerPipelineOutputLayer(Layer):
         return input_shape
 
     def call(self, inputs, **kwargs):
-        if isinstance(inputs, ResourceVariable):
-            self._output_variable = ResourceVariable
         return inputs
 
     def send_forward(self, predict):
         if len(self._pipe.send_to) == 0:
             return
-        self._task_obj['data'] = predict
-        self._task_obj['type'] = 'forward'
-        for each in self._got_task_events:
-            each.set()
+        for i in range(len(self._handle_threads)):
+            with self._task_conds[i]:
+                self._task_queues[i].append(TensorCommunicateTask(
+                    TensorCommunicateTaskType.FORWARD, predict
+                ))
+                self._task_received[i] += 1
+                self._task_conds[i].notify_all()
+            Log.debug(
+                f'PipelineOutputLayer-{self.index}-thread-{i}'
+                f' got send forward task',
+                log_type=epct
+            )
 
-    def join_send_forward(self):
+    def wait_all_forward_sent(self):
         if len(self._pipe.send_to) == 0:
             return
-        for each in self._task_finish_events:
-            each.wait()
-            each.clear()
-        self._task_obj['data'] = None
+        for i in range(len(self._handle_threads)):
+            with self._result_conds[i]:
+                while self._task_received[i] > self._task_completed[i]:
+                    self._result_conds[i].wait()
+                self._task_received[i] = self._task_completed[i] = 0
+            Log.debug(
+                f'PipelineOutputLayer-{self.index}-thread-{i} all forward sent',
+                log_type=epct
+            )
 
     def receive_backward(self, targets):
         if len(self._pipe.send_to) == 0:
             return targets
-        self._task_obj['type'] = 'backward'
-        self._task_obj['data'] = targets
-        self._task_obj['result'] = [None for _ in self._pipe.send_to]
-        for each in self._got_task_events:
-            each.set()
+        for i in range(len(self._handle_threads)):
+            with self._task_conds[i]:
+                self._task_queues[i].append(
+                    TensorCommunicateTask(
+                        TensorCommunicateTaskType.BACKWARD,
+                        targets
+                    )
+                )
+                self._task_received[i] += 1
+                self._task_conds[i].notify_all()
+            Log.debug(
+                f'PipelineOutputLayer-{self.index}-thread-{i}'
+                f' got receive backward task',
+                log_type=epct
+            )
 
     def wait_and_get_backward(self, original_targets):
         if len(self._pipe.send_to) == 0:
             return original_targets
-        for each in self._task_finish_events:
-            each.wait()
-            each.clear()
-        res = tf.add_n(self._task_obj['result'])
-        self._task_obj['result'] = None
-        return res
+        results = []
+        for i in range(len(self._handle_threads)):
+            with self._result_conds[i]:
+                while len(self._result_queues[i]) == 0:
+                    Log.debug(
+                        f'PipelineOutputLayer-{self.index}-thread-{i}'
+                        f' wait receive backward',
+                        log_type=epct
+                    )
+                    self._result_conds[i].wait()
+                    Log.debug(
+                        f'PipelineOutputLayer-{self.index}-thread-{i}'
+                        f' receive backward await',
+                        log_type=epct
+                    )
+                Log.debug(
+                    f'PipelineOutputLayer-{self.index}-thread-{i} got result',
+                    log_type=epct
+                )
+                results.append(self._result_queues[i].pop(0))
+        return tf.add_n(results)
 
-    def _handle_thread_fn(self, index):
+    def _handle_thread_fn(self, t_id):
         convey_gradient = self._convey_gradient
         pipe = self._pipe
         pipeline_model_rank = self._pipeline_model_rank
         stage_rank = self._stage.stage_rank
         communicator_id = self._communicator.id
-        output_index = self._pipe.index_of(self._stage)
-        sending_to_input_index = pipe.index_of(self._pipe.send_to[index])
-        connecting_stage_rank = self._pipe.send_to[index].stage_rank
-        got_task_event = self._got_task_events[index]
-        task_finish_event = self._task_finish_events[index]
-        Log.debug(f'output-layer-{output_index}-{index} ready', log_type=epct)
+        sending_to_input_index = pipe.index_of(self._pipe.send_to[t_id])
+        connecting_stage_rank = self._pipe.send_to[t_id].stage_rank
+        task_cond = self._task_conds[t_id]
+        task_queue = self._task_queues[t_id]
+        result_cond = self._result_conds[t_id]
+        result_queue = self._result_queues[t_id]
+
         while True:
-            Log.debug(f'output-layer-{output_index}-{index} wait task',
-                      log_type=epct)
-            got_task_event.wait()
-            got_task_event.clear()
-            if self._task_obj['type'] == 'forward':
-                Log.debug(f'output-layer-{output_index}-{index}'
+            with task_cond:
+                while len(task_queue) == 0:
+                    Log.debug(
+                        f'PipelineOutputLayer-{self.index}-{t_id} wait task',
+                        log_type=epct)
+                    task_cond.wait()
+                task: TensorCommunicateTask = task_queue.pop(0)
+
+            if task.type == TensorCommunicateTaskType.FORWARD:
+                Log.debug(f'PipelineOutputLayer-{self.index}-{t_id}'
                           f' got forward task', log_type=epct)
                 CPPBackend.tf_lib().send_tensor(
-                    self._task_obj['data'],
+                    task.data,
                     receiver=connecting_stage_rank,
                     tag=sending_to_input_index,
                     communicator_id=communicator_id,
                     key=f'pipeline-{pipeline_model_rank}-stage-'
                         f'{stage_rank}-output-'
-                        f'{output_index}-forward-to-stage-'
+                        f'{self.index}-forward-to-stage-'
                         f'{connecting_stage_rank}-input-'
                         f'{sending_to_input_index}'
                 )
-                Log.debug(f'output-layer-{output_index}-{index} '
+                Log.debug(f'PipelineOutputLayer-{self.index}-{t_id} '
                           f'finishes forward task', log_type=epct)
-            elif self._task_obj['type'] == 'backward':
-                Log.debug(f'output-layer-{output_index}-{index}'
+                with result_cond:
+                    self._task_completed[t_id] += 1
+                    result_cond.notify_all()
+            elif task.type == TensorCommunicateTaskType.BACKWARD:
+                Log.debug(f'PipelineOutputLayer-{self.index}-{t_id}'
                           f' got backward task', log_type=epct)
                 if not convey_gradient:
-                    Log.debug(f'output-layer-{output_index}-{index}'
+                    Log.debug(f'PipelineOutputLayer-{self.index}-{t_id}'
                               f' finishes backward task', log_type=epct)
                     continue
-
-                x = CPPBackend.tf_lib().receive_tensor(
-                    self._task_obj['data'],
+                received = CPPBackend.tf_lib().receive_tensor(
+                    task.data,
                     sender=connecting_stage_rank,
                     tag=sending_to_input_index,
                     key=f'pipeline-'
@@ -551,20 +676,25 @@ class EagerPipelineOutputLayer(Layer):
                     # 这里要传入handle(整数值), 而不是一个python对象
                     communicator_id=communicator_id
                 )
-                self._task_obj['result'][index] = x
-                Log.debug(f'output-layer-{output_index}-{index}'
+                with result_cond:
+                    result_queue.append(received)
+                    self._task_completed[t_id] += 1
+                    result_cond.notify_all()
+                Log.debug(f'PipelineOutputLayer-{self.index}-{t_id}'
                           f' finishes backward task', log_type=epct)
             else:
+                Log.debug(f'PipelineOutputLayer-{self.index}-{t_id}'
+                          f' notify main thread finished', log_type=epct)
                 return
-            Log.debug(f'output-layer-{output_index}-{index}'
-                      f' notify main thread finished', log_type=epct)
-            task_finish_event.set()
 
     def __del__(self):
         if self._handle_threads is not None:
             # todo: 验证一下每个线程是否都退出了
-            self._task_obj['type'] = 'exit'
-            for each in self._got_task_events:
-                each.set()
+            for i in range(len(self._handle_threads)):
+                with self._task_conds[i]:
+                    self._task_queues[i].append(TensorCommunicateTask(
+                        TensorCommunicateTaskType.EXIT, None
+                    ))
+                    self._task_conds[i].notify_all()
             for each in self._handle_threads:
                 each.join()
