@@ -9,7 +9,7 @@ if __name__ == '__main__':
 
     sys.path.append(abspath(join(__file__, '../../../')))
 
-from ddl.log import exception_with_world_rank_info
+from ddl.log import exception_with_world_rank_info, LogMemoryStats, TimeUnit
 from ddl.examples.pipeline_common import MnistDistributedData, \
     evaluate, batch_size, micro_batch_size, \
     epochs, lr_warm_up_epochs, lr
@@ -96,4 +96,5 @@ def main():
     evaluate(model)
 
 
-main()
+with LogMemoryStats(log_div=0.1, time_unit=TimeUnit.MS):
+    main()

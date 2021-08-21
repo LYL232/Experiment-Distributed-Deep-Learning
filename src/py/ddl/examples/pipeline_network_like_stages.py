@@ -9,7 +9,7 @@ if __name__ == '__main__':
 
     sys.path.append(abspath(join(__file__, '../../../')))
 
-from ddl.log import exception_with_world_rank_info
+from ddl.log import exception_with_world_rank_info, LogMemoryStats, TimeUnit
 from ddl.tensorflow.keras.parallelism.pipeline.model import \
     PipelineModel
 from ddl.tensorflow.keras.parallelism.pipeline.stage import PipelineStage
@@ -117,4 +117,5 @@ def main():
     evaluate(model)
 
 
-main()
+with LogMemoryStats(log_div=0.1, time_unit=TimeUnit.MS):
+    main()

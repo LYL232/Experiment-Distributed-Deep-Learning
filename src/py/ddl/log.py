@@ -1,7 +1,10 @@
+import json
+
 from ddl.tensorflow.cpp_backend import CPPBackend
 from ctypes import create_string_buffer
 from enum import Enum
 from tensorflow.keras.callbacks import Callback
+from threading import Thread, Condition
 
 
 class TimeUnit(Enum):
@@ -136,6 +139,75 @@ class Log:
         CPPBackend.c_api().py_error(
             create_string_buffer(bytes(msg, encoding='UTF-8')),
         )
+
+
+class LogMemoryStats:
+    def __init__(self, log_div: float, time_unit: TimeUnit):
+        self.__thread = Thread(target=self._log_main)
+        log_div = float(log_div)
+        assert log_div > 1e-6
+        self.__log_div = log_div
+        self.__time_unit = time_unit
+        self.__running = False
+        self.__exit = False
+        self.__cond = Condition()
+        self.__thread.start()
+
+    def __enter__(self):
+        self.unpause()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        with self.__cond:
+            self.__exit = True
+            self.__cond.notify_all()
+
+    def unpause(self):
+        with self.__cond:
+            self.__running = True
+            self.__cond.notify_all()
+
+    def pause(self):
+        with self.__cond:
+            self.__running = False
+
+    @property
+    def log_div(self) -> float:
+        return self.__log_div
+
+    @property
+    def time_unit(self) -> TimeUnit:
+        return self.__time_unit
+
+    def _log_main(self):
+        import psutil
+        import time
+
+        Log.info(f'LogMemoryStats log div: {self.log_div}s')
+        while True:
+            time.sleep(self.log_div)
+            with self.__cond:
+                while not self.__running:
+                    self.__cond.wait()
+                if self.__exit:
+                    return
+            stats = psutil.virtual_memory()
+            log_str = json.dumps(
+                {
+                    'total': stats.total,
+                    'available': stats.available,
+                    'percent': stats.percent,
+                    'used': stats.used,
+                    'free': stats.free,
+                    'inactive': stats.inactive,
+                },
+                ensure_ascii=False,
+            )
+            log_str = f'MEM-LOG[{log_str}]'
+            with self.__cond:
+                if not self.__running:
+                    continue
+            Log.time_log(log_str, unit=self.time_unit, log_type=LogType.must())
 
 
 class TimeLogCallback(Callback):
